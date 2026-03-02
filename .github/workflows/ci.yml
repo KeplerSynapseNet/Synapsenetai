@@ -217,6 +217,7 @@ jobs:
           mingw-w64-x86_64-ncurses
           mingw-w64-x86_64-sqlite3
           git
+          diffutils
 
     - name: Verify interface mirrors (MSYS2)
       shell: msys2 {0}
