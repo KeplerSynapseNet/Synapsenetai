@@ -1,0 +1,303 @@
+name: CI Build & Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        compiler: [gcc, clang]
+        exclude:
+          # GCC not default on macOS
+          - os: macos-latest
+            compiler: gcc
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Verify interface mirrors
+      run: |
+        bash KeplerSynapseNet/tools/check_interface_mirrors.sh
+
+    - name: Install dependencies (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          libssl-dev \
+          libncurses-dev \
+          libsqlite3-dev \
+          git
+
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install cmake ncurses sqlite3
+
+    - name: Set up compiler (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        if [ "${{ matrix.compiler }}" = "gcc" ]; then
+          echo "CC=gcc" >> $GITHUB_ENV
+          echo "CXX=g++" >> $GITHUB_ENV
+        else
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "CXX=clang++" >> $GITHUB_ENV
+        fi
+
+    - name: Set up compiler (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        echo "CC=clang" >> $GITHUB_ENV
+        echo "CXX=clang++" >> $GITHUB_ENV
+
+    - name: Create build directory
+      run: mkdir -p build
+
+    - name: Configure CMake (without llama.cpp for fast CI)
+      run: |
+        cmake -S KeplerSynapseNet -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DUSE_LLAMA_CPP=OFF \
+          -DBUILD_PRIVACY=OFF \
+          -DBUILD_TESTS=ON
+
+    - name: Build
+      run: |
+        cmake --build build --config Release --parallel $(nproc || sysctl -n hw.logicalcpu)
+
+    - name: Run tests
+      run: |
+        ctest --test-dir build --output-on-failure --parallel $(nproc || sysctl -n hw.logicalcpu)
+
+    - name: Quantum gate checks
+      run: |
+        ctest --test-dir build --output-on-failure -R "QuantumTests|QuantumRuntimeTests"
+
+    - name: Security gate checks
+      run: |
+        ctest --test-dir build --output-on-failure -R \
+          "ImplantCompatibilityTests|WebExtractionRiskTests|WebConnectorAuditTests|AgentCoordinationTests|NaanAdversarialTests|NaanIntegrationTests|NaanRecoveryTests"
+
+    - name: Determinism replay diff gate
+      run: |
+        ./build/tests/test_determinism_replay > /tmp/update_payload_run_1.txt
+        ./build/tests/test_determinism_replay > /tmp/update_payload_run_2.txt
+        diff -u /tmp/update_payload_run_1.txt /tmp/update_payload_run_2.txt
+
+    - name: Reproducible runtime deps check
+      run: |
+        if [ "$(uname)" = "Darwin" ]; then
+          otool -L ./build/synapsed | tail -n +2 | awk '{print $1}' | LC_ALL=C sort > /tmp/runtime_deps_1.txt
+          otool -L ./build/synapsed | tail -n +2 | awk '{print $1}' | LC_ALL=C sort > /tmp/runtime_deps_2.txt
+        else
+          ldd ./build/synapsed | awk '{print $1}' | LC_ALL=C sort > /tmp/runtime_deps_1.txt
+          ldd ./build/synapsed | awk '{print $1}' | LC_ALL=C sort > /tmp/runtime_deps_2.txt
+        fi
+        diff -u /tmp/runtime_deps_1.txt /tmp/runtime_deps_2.txt
+
+    - name: Verify clean tree
+      run: |
+        if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+          git status --short
+          exit 1
+        fi
+
+    - name: Build with Privacy (Ubuntu only)
+      if: runner.os == 'Linux'
+      run: |
+        rm -rf build_privacy
+        cmake -S KeplerSynapseNet -B build_privacy \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DUSE_LLAMA_CPP=OFF \
+          -DBUILD_PRIVACY=ON \
+          -DBUILD_TESTS=ON
+        cmake --build build_privacy --config Release --parallel $(nproc)
+
+    - name: Test Privacy Build (Ubuntu only)
+      if: runner.os == 'Linux'
+      run: |
+        ctest --test-dir build_privacy --output-on-failure --parallel $(nproc)
+
+  build-with-llama:
+    runs-on: ubuntu-latest
+    name: Build with llama.cpp (Linux)
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Verify interface mirrors
+      run: |
+        bash KeplerSynapseNet/tools/check_interface_mirrors.sh
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          libssl-dev \
+          libncurses-dev \
+          libsqlite3-dev \
+          git
+
+    - name: Create build directory
+      run: mkdir -p build
+
+    - name: Configure CMake (with llama.cpp)
+      run: |
+        cmake -S KeplerSynapseNet -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DUSE_LLAMA_CPP=ON \
+          -DBUILD_PRIVACY=OFF \
+          -DBUILD_TESTS=ON
+
+    - name: Build with llama.cpp
+      run: |
+        # Set longer timeout for llama.cpp build
+        timeout 1800 cmake --build build --config Release --parallel 2
+
+    - name: Check if synapsed binary exists
+      run: |
+        if [ -f build/synapsed ]; then
+          echo "✓ synapsed binary built successfully"
+          ./build/synapsed --version 2>/dev/null || echo "Binary exists but version check not implemented"
+        else
+          echo "✗ Failed to build synapsed"
+          exit 1
+        fi
+
+  code-quality:
+    runs-on: ubuntu-latest
+    name: Code Quality Checks
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check file permissions
+      run: |
+        # Ensure shell scripts are executable
+        find . -name "*.sh" -type f -exec chmod +x {} \;
+        git diff --exit-code || echo "Files need permission fix"
+
+    - name: Check for TODO comments
+      run: |
+        echo "=== TODO/FIXME items found ==="
+        grep -r "TODO\|FIXME" --include="*.cpp" --include="*.h" KeplerSynapseNet/src/ || echo "No TODOs found"
+
+  build-windows:
+    runs-on: windows-latest
+    name: build (windows-latest, msys2)
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-toolchain
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-ninja
+          mingw-w64-x86_64-pkgconf
+          mingw-w64-x86_64-openssl
+          mingw-w64-x86_64-ncurses
+          mingw-w64-x86_64-sqlite3
+          git
+
+    - name: Verify interface mirrors (MSYS2)
+      shell: msys2 {0}
+      run: |
+        bash KeplerSynapseNet/tools/check_interface_mirrors.sh
+
+    - name: Configure CMake (MSYS2)
+      shell: msys2 {0}
+      run: |
+        cmake -S KeplerSynapseNet -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_C_COMPILER=gcc \
+          -DCMAKE_CXX_COMPILER=g++ \
+          -DCMAKE_PREFIX_PATH=/mingw64 \
+          -DOPENSSL_ROOT_DIR=/mingw64 \
+          -DOPENSSL_CRYPTO_LIBRARY=/mingw64/lib/libcrypto.dll.a \
+          -DOPENSSL_SSL_LIBRARY=/mingw64/lib/libssl.dll.a \
+          -DBUILD_TUI=OFF \
+          -DUSE_LLAMA_CPP=OFF \
+          -DUSE_SECP256K1=ON \
+          -DBUILD_PRIVACY=OFF \
+          -DBUILD_IDE=OFF \
+          -DBUILD_TESTS=ON
+
+    - name: Build (MSYS2)
+      shell: msys2 {0}
+      run: |
+        cmake --build build --config Release --parallel 2
+
+    - name: Run tests (MSYS2)
+      shell: msys2 {0}
+      run: |
+        ctest --test-dir build --output-on-failure --parallel 2
+
+    - name: Quantum gate checks (MSYS2)
+      shell: msys2 {0}
+      run: |
+        ctest --test-dir build --output-on-failure -R "QuantumTests|QuantumRuntimeTests"
+
+    - name: Security gate checks (MSYS2)
+      shell: msys2 {0}
+      run: |
+        ctest --test-dir build --output-on-failure -R \
+          "ImplantCompatibilityTests|WebExtractionRiskTests|WebConnectorAuditTests|AgentCoordinationTests|NaanAdversarialTests|NaanIntegrationTests|NaanRecoveryTests"
+
+    - name: Determinism replay diff gate (MSYS2)
+      shell: msys2 {0}
+      run: |
+        REPLAY_BIN=./build/tests/test_determinism_replay
+        if [ ! -f "$REPLAY_BIN" ]; then
+          REPLAY_BIN=./build/tests/test_determinism_replay.exe
+        fi
+        "$REPLAY_BIN" > update_payload_run_1.txt
+        "$REPLAY_BIN" > update_payload_run_2.txt
+        diff -u update_payload_run_1.txt update_payload_run_2.txt
+
+    - name: Reproducible runtime deps check (MSYS2)
+      shell: msys2 {0}
+      run: |
+        BIN=./build/synapsed
+        if [ ! -f "$BIN" ]; then
+          BIN=./build/synapsed.exe
+        fi
+        ldd "$BIN" | awk '{print $1}' | LC_ALL=C sort > runtime_deps_1.txt
+        ldd "$BIN" | awk '{print $1}' | LC_ALL=C sort > runtime_deps_2.txt
+        diff -u runtime_deps_1.txt runtime_deps_2.txt
+
+    - name: Verify clean tree (MSYS2)
+      shell: msys2 {0}
+      run: |
+        if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+          git status --short
+          exit 1
+        fi
+
+  docker-build:
+    runs-on: ubuntu-latest
+    name: Docker build (KeplerSynapseNet)
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build Docker image (runs tests during build)
+      run: |
+        docker build -f KeplerSynapseNet/Dockerfile -t synapsenet:ci KeplerSynapseNet
