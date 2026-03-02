@@ -16,7 +16,9 @@
 #include <sstream>
 #include <iomanip>
 #include <cctype>
+#ifndef _WIN32
 #include <sys/resource.h>
+#endif
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
@@ -91,10 +93,12 @@ struct ModelLoader::Impl {
 
 // Helper: Get available system memory in bytes
 static uint64_t getAvailableMemory() {
+#ifndef _WIN32
     struct rusage ru;
     if (getrusage(RUSAGE_SELF, &ru) == 0) {
         return static_cast<uint64_t>(ru.ru_maxrss) * 1024;  // maxrss in KB on Unix
     }
+#endif
     return 0;
 }
 
