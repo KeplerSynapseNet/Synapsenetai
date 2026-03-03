@@ -411,6 +411,10 @@ json implantSafetyRecordToJson(const core::ImplantSafetyRecord& record) const {
     return out;
 }
 
+static std::string safeDump(const json& j) {
+    return j.dump(-1, ' ', false, json::error_handler_t::replace);
+}
+
 bool parsePublicKeyHex(const std::string& hex, crypto::PublicKey& out) const {
     auto bytes = crypto::fromHex(hex);
     if (bytes.size() != out.size()) return false;
@@ -1466,7 +1470,7 @@ void emitSecurityEvent(uint64_t atTimestamp,
     if (severity == "high" || severity == "critical") {
         naanSecurityHighSeverityEvents_.fetch_add(1);
     }
-    utils::Logger::warn("SECURITY_EVENT " + payload.dump());
+    utils::Logger::warn("SECURITY_EVENT " + safeDump(payload));
 }
 
 std::vector<core::DetachedSignerApproval> detachedSignerApprovals(const crypto::Hash256& bundleId) {
@@ -1798,7 +1802,7 @@ void appendNaanAuditEvent(uint64_t atTimestamp,
     }
 
     std::string reason;
-    if (!naanAuditLog_.append(atTimestamp, kind, objectId, safePayload.dump(), &reason)) {
+    if (!naanAuditLog_.append(atTimestamp, kind, objectId, safeDump(safePayload), &reason)) {
         utils::Logger::warn("Failed to append NAAN audit event (" + kind + "): " + reason);
         return;
     }
@@ -1812,7 +1816,7 @@ void appendNaanAuditEvent(uint64_t atTimestamp,
         naanRedactionCount_.fetch_add(1);
     }
 
-    std::string payloadSummary = safePayload.dump();
+    std::string payloadSummary = safeDump(safePayload);
     if (payloadSummary.size() > 220) {
         payloadSummary = payloadSummary.substr(0, 220) + "...";
     }
@@ -2460,7 +2464,7 @@ void reconcileNaanReviewArtifactsWithDraftQueue(uint64_t nowTimestamp) {
         if (!sanitizeNaanPayload(&payload, "review_consistency_repair_payload", nowTimestamp)) {
             continue;
         }
-        const std::string payloadText = payload.dump();
+        const std::string payloadText = safeDump(payload);
 
         core::ToolInvocation call;
         call.toolName = "observatory.post";
@@ -2897,7 +2901,7 @@ bool initNaanCoordination() {
     if (!sanitizeNaanPayload(&startup, "startup_alert_payload", now)) {
         return failInit("Failed to sanitize startup alert payload");
     }
-    const std::string startupText = startup.dump();
+    const std::string startupText = safeDump(startup);
 
     core::ToolInvocation startupAlertCall;
     startupAlertCall.toolName = "observatory.post";
@@ -3187,7 +3191,7 @@ bool runNaanResearchTask(uint64_t now, const core::AgentAdaptiveSchedule& schedu
         naanLastResearchTs_.store(now);
         return false;
     }
-    const std::string payloadText = payload.dump();
+    const std::string payloadText = safeDump(payload);
 
     core::ToolInvocation researchCall;
     researchCall.toolName = "observatory.post";
@@ -3283,7 +3287,7 @@ bool runNaanVerifyTask(uint64_t now, const core::AgentAdaptiveSchedule& schedule
         naanLastVerifyTs_.store(now);
         return false;
     }
-    const std::string reviewPayloadText = reviewPayload.dump();
+    const std::string reviewPayloadText = safeDump(reviewPayload);
 
     appendNaanAuditEvent(now, "draft_review_upsert", crypto::toHex(dry.draftId), reviewPayload);
 
@@ -3317,7 +3321,7 @@ bool runNaanReviewTask(uint64_t now, const core::AgentAdaptiveSchedule& schedule
         naanLastReviewTs_.store(now);
         return false;
     }
-    const std::string heartbeatText = heartbeat.dump();
+    const std::string heartbeatText = safeDump(heartbeat);
 
     core::ToolInvocation heartbeatCall;
     heartbeatCall.toolName = "observatory.post";
@@ -3349,7 +3353,7 @@ bool runNaanDraftTask(uint64_t now, const core::AgentAdaptiveSchedule& schedule)
     if (!sanitizeNaanPayload(&draftBody, "periodic_draft_payload", now)) {
         return false;
     }
-    const std::string draftBodyText = draftBody.dump();
+    const std::string draftBodyText = safeDump(draftBody);
 
     core::AgentDraftProposal proposal;
     proposal.createdAt = now;
@@ -10030,19 +10034,28 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
                 lastAnnounce = now;
             }
             
-            if (config_.discovery && network_->peerCount() < config_.maxOutbound) {
-                // Prioritize bootstrap nodes first (best chance to find network quickly)
-                if (discovery_) {
-                    auto boots = discovery_->getBootstrapNodes();
-                    for (const auto& bn : boots) {
-                        if (network_->peerCount() >= config_.maxOutbound) break;
+            // Always try to maintain bootstrap/seed node connections
+            if (discovery_) {
+                std::unordered_set<std::string> connectedAddrs;
+                for (const auto& peer : network_->getPeers()) {
+                    connectedAddrs.insert(peer.address + ":" + std::to_string(peer.port));
+                }
+                auto boots = discovery_->getBootstrapNodes();
+                for (const auto& bn : boots) {
+                    std::string id = bn.address + ":" + std::to_string(bn.port);
+                    if (connectedAddrs.count(id) == 0) {
                         network_->connect(bn.address, bn.port);
                     }
                 }
-                auto peers = discovery_->getRandomPeers(10);
-                for (const auto& peer : peers) {
-                    if (network_->peerCount() >= config_.maxOutbound) break;
-                    network_->connect(peer.address, peer.port);
+            }
+            
+            if (config_.discovery && network_->peerCount() < config_.maxOutbound) {
+                if (discovery_) {
+                    auto peers = discovery_->getRandomPeers(10);
+                    for (const auto& peer : peers) {
+                        if (network_->peerCount() >= config_.maxOutbound) break;
+                        network_->connect(peer.address, peer.port);
+                    }
                 }
             }
             
@@ -10066,7 +10079,8 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
             for (const auto& node : config_.connectNodes) connectToNode(node);
             for (const auto& node : config_.addNodes) connectToNode(node);
             
-            for (int i = 0; i < 300 && running_; ++i) {
+            // Reconnect every 10 seconds instead of 30 for faster recovery
+            for (int i = 0; i < 100 && running_; ++i) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         }
@@ -10086,10 +10100,15 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
 		        uint64_t lastQuantum = 0;
 		        uint64_t lastBlock = 0;
                 uint64_t lastOfferBroadcast = 0;
+                uint64_t lastAutoVoteSweep = 0;
 		        while (running_) {
 		            uint64_t now = std::time(nullptr);
 		            tickNaanCoordinationSupervised(now);
                     maybeRunAutoPoeEpoch(now);
+                    if (now - lastAutoVoteSweep >= 5) {
+                        autoVoteSweepAllPending();
+                        lastAutoVoteSweep = now;
+                    }
 		            uint32_t limitEpochs = config_.dev ? 128 : 64;
 
 		            struct PoeRetry {
@@ -11739,13 +11758,23 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
         return 0;
     }
 
+    void autoVoteSweepAllPending() {
+        if (!poeV1_ || !keys_ || !keys_->isValid()) return;
+        auto allIds = poeV1_->listEntryIds(0);
+        for (const auto& sid : allIds) {
+            if (!poeV1_->isFinalized(sid)) {
+                maybeAutoVote(sid);
+            }
+        }
+    }
+
     void maybeRunAutoPoeEpoch(uint64_t now) {
         if (!poeV1_ || !transfer_) return;
 
         auto& runtimeCfg = utils::Config::instance();
         if (!runtimeCfg.getBool("poe.epoch.auto_enabled", true)) return;
 
-        int64_t intervalRaw = runtimeCfg.getInt64("poe.epoch.auto_interval_seconds", config_.dev ? 30 : 300);
+        int64_t intervalRaw = runtimeCfg.getInt64("poe.epoch.auto_interval_seconds", 30);
         if (intervalRaw < 5) intervalRaw = 5;
         if (intervalRaw > 86400) intervalRaw = 86400;
         const uint64_t intervalSec = static_cast<uint64_t>(intervalRaw);
@@ -11753,7 +11782,7 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
         const uint64_t lastRun = autoPoeEpochLastRunAt_.load();
         if (lastRun != 0 && now < (lastRun + intervalSec)) return;
 
-        const bool requireNewFinalized = runtimeCfg.getBool("poe.epoch.auto_require_new_finalized", true);
+        const bool requireNewFinalized = runtimeCfg.getBool("poe.epoch.auto_require_new_finalized", false);
         const uint64_t finalizedCount = poeV1_->totalFinalized();
         if (finalizedCount == 0) return;
         if (requireNewFinalized && finalizedCount <= autoPoeEpochLastFinalizedCount_.load()) return;

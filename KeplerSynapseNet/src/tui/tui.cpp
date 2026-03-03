@@ -2850,7 +2850,7 @@ void TUI::Impl::drawKnowledge() {
     }
 
     int controlsY = listY + listH + 1;
-    printClippedLine(controlsY, boxX + 3, innerW, "[C] Contribute (manual add)  [E] Epoch Rewards  [Up/Down] Scroll  [B] Back");
+    printClippedLine(controlsY, boxX + 3, innerW, "[C] Contribute (manual add)  [Up/Down] Scroll  [B] Back  (Epoch rewards: automatic)");
     
     drawStatusBar();
     ::refresh();
@@ -4672,10 +4672,6 @@ void TUI::run() {
                     impl_->state.knowledgeSource.clear();
                     impl_->state.knowledgeField = 0;
                     impl_->screen = Screen::KNOWLEDGE_SUBMIT;
-                } else if (ch == 'e' || ch == 'E') {
-                    if (impl_->commandHandler) {
-                        impl_->commandHandler("poe_epoch");
-                    }
                 } else if (ch == KEY_UP) {
                     impl_->scrollOffset--;
                 } else if (ch == KEY_DOWN) {
