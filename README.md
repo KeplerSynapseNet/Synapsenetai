@@ -51,14 +51,167 @@ SynapseNet is a local-first AI network where nodes contribute and validate knowl
 kepler
 `bc1q5pkemq7q84ld4rf5kwtafp7jfl9dlf3pc4z9d4`
 
+## Connecting to the SynapseNet Network
+
+The SynapseNet seed node runs at `144.31.169.103:8333`. All clients automatically discover and connect to it via the hardcoded bootstrap list. You can also add it manually with `--addnode 144.31.169.103:8333`.
+
+### macOS (Native Build)
+
+```bash
+# 1. Install dependencies
+brew install cmake openssl@3 ncurses sqlite3
+
+# 2. Clone the repository
+git clone https://github.com/KeplerSynapseNet/Synapsenetai.git
+cd Synapsenetai
+
+# 3. Build
+cmake -S KeplerSynapseNet -B build -DCMAKE_BUILD_TYPE=Release \
+  -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
+  -DBUILD_TESTS=ON -DBUILD_IDE=OFF
+cmake --build build -j$(sysctl -n hw.ncpu)
+
+# 4. Create a config file (clearnet mode, no Tor)
+cat > /tmp/synapsenet.conf << 'EOF'
+agent.tor.required=false
+agent.routing.allow_clearnet_fallback=true
+agent.routing.allow_p2p_clearnet_fallback=true
+force_clearnet_naan=true
+naan_automining=true
+poe.epoch.auto_enabled=true
+skip_wizard=true
+EOF
+
+# 5. Run the node (daemon mode)
+./build/synapsed -d \
+  --config /tmp/synapsenet.conf \
+  --datadir /tmp/synapsenet_data \
+  --port 8333 \
+  --addnode 144.31.169.103:8333
+
+# 6. Check logs
+cat /tmp/synapsenet_data/synapsenet.log
+# You should see: "Peer connected: 144.31.169.103:8333"
+
+# 7. Run with TUI (interactive mode)
+TERM=xterm-256color ./build/synapsed \
+  --config /tmp/synapsenet.conf \
+  --datadir /tmp/synapsenet_data \
+  --addnode 144.31.169.103:8333
+```
+
+### Ubuntu / Debian (Linux)
+
+```bash
+# 1. Install dependencies
+sudo apt-get update
+sudo apt-get install -y build-essential cmake git libssl-dev \
+  libcurl4-openssl-dev libncurses-dev libncursesw5-dev libsqlite3-dev
+
+# 2. Clone the repository
+git clone https://github.com/KeplerSynapseNet/Synapsenetai.git
+cd Synapsenetai
+
+# 3. Build
+cmake -S KeplerSynapseNet -B build -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTS=ON -DBUILD_IDE=OFF
+cmake --build build -j$(nproc)
+
+# 4. Create a config file
+cat > /tmp/synapsenet.conf << 'EOF'
+agent.tor.required=false
+agent.routing.allow_clearnet_fallback=true
+agent.routing.allow_p2p_clearnet_fallback=true
+force_clearnet_naan=true
+naan_automining=true
+poe.epoch.auto_enabled=true
+skip_wizard=true
+EOF
+
+# 5. Run the node (daemon mode)
+./build/synapsed -d \
+  --config /tmp/synapsenet.conf \
+  --datadir /tmp/synapsenet_data \
+  --port 8333 \
+  --addnode 144.31.169.103:8333
+
+# 6. Check logs
+cat /tmp/synapsenet_data/synapsenet.log
+
+# 7. Run with TUI (interactive mode)
+TERM=xterm-256color ./build/synapsed \
+  --config /tmp/synapsenet.conf \
+  --datadir /tmp/synapsenet_data \
+  --addnode 144.31.169.103:8333
+```
+
+### Docker
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/KeplerSynapseNet/Synapsenetai.git
+cd Synapsenetai
+
+# 2. Build and run with Docker Compose (recommended)
+COMPOSE_MENU=false docker compose up --build
+
+# 3. Or build and run manually
+docker build -f KeplerSynapseNet/Dockerfile -t keplersynapsenet:local KeplerSynapseNet
+docker run --rm -it \
+  -p 8332:8332 -p 8333:8333 \
+  -e SYNAPSENET_ADDNODE=144.31.169.103:8333 \
+  -e SYNAPSENET_PRIVACY=false \
+  -e SYNAPSENET_DAEMON=false \
+  keplersynapsenet:local
+
+# 4. Health check
+docker compose exec -T synapsenet /app/synapsed status -D /data
+
+# 5. Stop
+docker compose down
+```
+
+### Useful Commands
+
+```bash
+# Check node status
+./build/synapsed status --datadir /tmp/synapsenet_data
+
+# List connected peers
+./build/synapsed peers --datadir /tmp/synapsenet_data
+
+# Show wallet balance
+./build/synapsed balance --datadir /tmp/synapsenet_data
+
+# Show wallet address
+./build/synapsed address --datadir /tmp/synapsenet_data
+
+# Search the knowledge network
+./build/synapsed query "quantum computing" --datadir /tmp/synapsenet_data
+
+# Stop the daemon
+kill $(cat /tmp/synapsenet_data/synapsed.lock | head -1)
+```
+
+### Network Ports
+
+| Port | Protocol | Description |
+|------|----------|-------------|
+| 8333 | TCP | P2P network (peer discovery, block relay) |
+| 8332 | TCP | JSON-RPC API |
+
+### Seed Node
+
+| Host | Port | Location |
+|------|------|----------|
+| `144.31.169.103` | 8333 | Finland |
+
+---
+
 ## Quick Start
 
 ```bash
-# If you configured with: cmake -S KeplerSynapseNet -B build
-TERM=xterm-256color ./build/synapsed -D /tmp/synapsenet_dev --dev
-
-# If you configured inside KeplerSynapseNet (cmake -S . -B build)
-# TERM=xterm-256color ./KeplerSynapseNet/build/synapsed -D /tmp/synapsenet_dev --dev
+TERM=xterm-256color ./build/synapsed -D /tmp/synapsenet_dev --dev --addnode 144.31.169.103:8333
 ```
 
 For external Tor (`9150`) bridge mode and startup troubleshooting, see `KeplerSynapseNet/README.md` and:
