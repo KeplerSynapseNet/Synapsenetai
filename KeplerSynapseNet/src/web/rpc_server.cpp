@@ -1,0 +1,516 @@
+#include "web/rpc_server.h"
+#include "web/web.h"
+#include <string>
+#include <vector>
+#include <map>
+#include <functional>
+#include <mutex>
+#include <thread>
+#include <atomic>
+#include <queue>
+#include <condition_variable>
+#include <sstream>
+#include <iomanip>
+#include <chrono>
+#include <cstring>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <poll.h>
+#include "../../third_party/llama.cpp/vendor/nlohmann/json.hpp"
+
+namespace synapse {
+namespace web {
+
+enum class RpcErrorCode {
+    PARSE_ERROR = -32700,
+    INVALID_REQUEST = -32600,
+    METHOD_NOT_FOUND = -32601,
+    INVALID_PARAMS = -32602,
+    INTERNAL_ERROR = -32603,
+    SERVER_ERROR = -32000,
+    UNAUTHORIZED = -32001,
+    RATE_LIMITED = -32002
+};
+
+struct RpcRequest {
+    std::string id;
+    std::string method;
+    std::string params;
+    std::string authToken;
+    uint64_t timestamp;
+    std::string clientIp;
+};
+
+struct RpcResponse {
+    std::string id;
+    std::string result;
+    int errorCode;
+    std::string errorMessage;
+};
+
+struct RpcMethod {
+    std::string name;
+    std::string description;
+    std::function<std::string(const std::string&)> handler;
+    bool requiresAuth;
+    int rateLimit;
+};
+
+struct ClientSession {
+    std::string sessionId;
+    std::string clientIp;
+    uint64_t connectedAt;
+    uint64_t lastActivity;
+    uint64_t requestCount;
+    bool authenticated;
+    std::string authToken;
+};
+
+struct RateLimitEntry {
+    uint64_t windowStart;
+    int requestCount;
+};
+
+struct RpcServer::Impl {
+    std::map<std::string, RpcMethod> methods;
+    std::map<std::string, ClientSession> sessions;
+    std::map<std::string, RateLimitEntry> rateLimits;
+    mutable std::mutex mtx;
+    mutable std::mutex sessionMtx;
+    std::atomic<bool> running;
+    std::thread acceptThread;
+    std::vector<std::thread> workerThreads;
+    std::queue<int> connectionQueue;
+    std::condition_variable cv;
+    
+    int serverSocket;
+    uint16_t port;
+    int rateLimitWindow;
+    int maxConnections;
+    int requestTimeout;
+    std::atomic<uint64_t> totalRequests;
+    
+    std::function<bool(const std::string&)> authCallback;
+    
+    void acceptLoop();
+    void workerLoop();
+    void handleConnection(int clientSocket);
+    RpcResponse processRequest(const RpcRequest& request);
+    std::string parseJsonRpc(const std::string& data, RpcRequest& request);
+    std::string formatResponse(const RpcResponse& response);
+    bool checkRateLimit(const std::string& clientIp, int limit);
+    std::string generateSessionId();
+    void cleanupSessions();
+};
+
+RpcServer::RpcServer() : impl_(std::make_unique<Impl>()) {
+    impl_->running = false;
+    impl_->serverSocket = -1;
+    impl_->port = 8332;
+    impl_->rateLimitWindow = 60;
+    impl_->maxConnections = 100;
+    impl_->requestTimeout = 30;
+    impl_->totalRequests = 0;
+}
+
+RpcServer::~RpcServer() {
+    stop();
+}
+
+bool RpcServer::start(uint16_t port) {
+    std::lock_guard<std::mutex> lock(impl_->mtx);
+    
+    if (impl_->running) return false;
+    
+    impl_->port = port;
+    
+    impl_->serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+    if (impl_->serverSocket < 0) return false;
+    
+    int opt = 1;
+    setsockopt(impl_->serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    
+    struct sockaddr_in addr;
+    std::memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(port);
+    
+    if (bind(impl_->serverSocket, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+        close(impl_->serverSocket);
+        impl_->serverSocket = -1;
+        return false;
+    }
+    
+    if (listen(impl_->serverSocket, impl_->maxConnections) < 0) {
+        close(impl_->serverSocket);
+        impl_->serverSocket = -1;
+        return false;
+    }
+    
+    impl_->running = true;
+    
+    impl_->acceptThread = std::thread(&Impl::acceptLoop, impl_.get());
+    
+    int numWorkers = std::thread::hardware_concurrency();
+    if (numWorkers < 2) numWorkers = 2;
+    
+    for (int i = 0; i < numWorkers; i++) {
+        impl_->workerThreads.emplace_back(&Impl::workerLoop, impl_.get());
+    }
+    
+    return true;
+}
+
+void RpcServer::stop() {
+    impl_->running = false;
+    impl_->cv.notify_all();
+    
+    if (impl_->serverSocket >= 0) {
+        shutdown(impl_->serverSocket, SHUT_RDWR);
+        close(impl_->serverSocket);
+        impl_->serverSocket = -1;
+    }
+    
+    if (impl_->acceptThread.joinable()) {
+        impl_->acceptThread.join();
+    }
+    
+    for (auto& thread : impl_->workerThreads) {
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
+    impl_->workerThreads.clear();
+}
+
+bool RpcServer::isRunning() const {
+    return impl_->running;
+}
+
+void RpcServer::registerMethod(const std::string& name,
+                                std::function<std::string(const std::string&)> handler,
+                                bool requiresAuth,
+                                int rateLimit) {
+    std::lock_guard<std::mutex> lock(impl_->mtx);
+    
+    RpcMethod method;
+    method.name = name;
+    method.handler = handler;
+    method.requiresAuth = requiresAuth;
+    method.rateLimit = rateLimit;
+    
+    impl_->methods[name] = method;
+}
+
+void RpcServer::unregisterMethod(const std::string& name) {
+    std::lock_guard<std::mutex> lock(impl_->mtx);
+    impl_->methods.erase(name);
+}
+
+void RpcServer::setAuthCallback(std::function<bool(const std::string&)> callback) {
+    std::lock_guard<std::mutex> lock(impl_->mtx);
+    impl_->authCallback = callback;
+}
+
+void RpcServer::setRateLimitWindow(int seconds) {
+    impl_->rateLimitWindow = seconds;
+}
+
+void RpcServer::setMaxConnections(int max) {
+    impl_->maxConnections = max;
+}
+
+void RpcServer::setRequestTimeout(int seconds) {
+    impl_->requestTimeout = seconds;
+}
+
+size_t RpcServer::getConnectionCount() const {
+    std::lock_guard<std::mutex> lock(impl_->sessionMtx);
+    return impl_->sessions.size();
+}
+
+size_t RpcServer::getMethodCount() const {
+    std::lock_guard<std::mutex> lock(impl_->mtx);
+    return impl_->methods.size();
+}
+
+uint64_t RpcServer::getTotalRequests() const {
+    return impl_->totalRequests;
+}
+
+void RpcServer::Impl::acceptLoop() {
+    while (running) {
+        struct pollfd pfd;
+        pfd.fd = serverSocket;
+        pfd.events = POLLIN;
+        
+        int ret = poll(&pfd, 1, 1000);
+        if (ret <= 0) continue;
+        
+        struct sockaddr_in clientAddr;
+        socklen_t clientLen = sizeof(clientAddr);
+        
+        int clientSocket = accept(serverSocket, 
+                                   reinterpret_cast<struct sockaddr*>(&clientAddr),
+                                   &clientLen);
+        
+        if (clientSocket < 0) continue;
+        
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            connectionQueue.push(clientSocket);
+        }
+        cv.notify_one();
+    }
+}
+
+void RpcServer::Impl::workerLoop() {
+    while (running) {
+        int clientSocket = -1;
+        
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            cv.wait_for(lock, std::chrono::seconds(1), [this] {
+                return !connectionQueue.empty() || !running;
+            });
+            
+            if (!running && connectionQueue.empty()) break;
+            
+            if (!connectionQueue.empty()) {
+                clientSocket = connectionQueue.front();
+                connectionQueue.pop();
+            }
+        }
+        
+        if (clientSocket >= 0) {
+            handleConnection(clientSocket);
+            close(clientSocket);
+        }
+    }
+}
+
+void RpcServer::Impl::handleConnection(int clientSocket) {
+    struct timeval tv;
+    tv.tv_sec = requestTimeout;
+    tv.tv_usec = 0;
+    setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    
+    char buffer[65536];
+    std::string requestData;
+    
+    while (running) {
+        ssize_t bytesRead = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+        if (bytesRead <= 0) break;
+        
+        buffer[bytesRead] = '\0';
+        requestData += buffer;
+        
+        size_t headerEnd = requestData.find("\r\n\r\n");
+        if (headerEnd == std::string::npos) continue;
+        
+        size_t contentLength = 0;
+        size_t clPos = requestData.find("Content-Length:");
+        if (clPos != std::string::npos) {
+            size_t clEnd = requestData.find("\r\n", clPos);
+            std::string clStr = requestData.substr(clPos + 15, clEnd - clPos - 15);
+            contentLength = std::stoul(clStr);
+        }
+        
+        std::string body = requestData.substr(headerEnd + 4);
+        if (body.length() < contentLength) continue;
+        
+        RpcRequest request;
+        std::string parseError = parseJsonRpc(body, request);
+        
+        RpcResponse response;
+        if (!parseError.empty()) {
+            response.id = request.id;
+            response.errorCode = static_cast<int>(RpcErrorCode::PARSE_ERROR);
+            response.errorMessage = parseError;
+        } else {
+            response = processRequest(request);
+        }
+        
+        std::string responseStr = formatResponse(response);
+        
+        std::stringstream httpResponse;
+        httpResponse << "HTTP/1.1 200 OK\r\n";
+        httpResponse << "Content-Type: application/json\r\n";
+        httpResponse << "Content-Length: " << responseStr.length() << "\r\n";
+        httpResponse << "Connection: keep-alive\r\n";
+        httpResponse << "\r\n";
+        httpResponse << responseStr;
+        
+        std::string httpStr = httpResponse.str();
+        send(clientSocket, httpStr.c_str(), httpStr.length(), 0);
+        
+        totalRequests++;
+        requestData.clear();
+    }
+}
+
+RpcResponse RpcServer::Impl::processRequest(const RpcRequest& request) {
+    RpcResponse response;
+    response.id = request.id;
+    response.errorCode = 0;
+    
+    std::lock_guard<std::mutex> lock(mtx);
+    
+    auto it = methods.find(request.method);
+    if (it == methods.end()) {
+        response.errorCode = static_cast<int>(RpcErrorCode::METHOD_NOT_FOUND);
+        response.errorMessage = "Method not found: " + request.method;
+        return response;
+    }
+    
+    const RpcMethod& method = it->second;
+    
+    if (method.requiresAuth) {
+        if (request.authToken.empty()) {
+            response.errorCode = static_cast<int>(RpcErrorCode::UNAUTHORIZED);
+            response.errorMessage = "Authentication required";
+            return response;
+        }
+        
+        if (authCallback && !authCallback(request.authToken)) {
+            response.errorCode = static_cast<int>(RpcErrorCode::UNAUTHORIZED);
+            response.errorMessage = "Invalid authentication token";
+            return response;
+        }
+    }
+    
+    if (!checkRateLimit(request.clientIp, method.rateLimit)) {
+        response.errorCode = static_cast<int>(RpcErrorCode::RATE_LIMITED);
+        response.errorMessage = "Rate limit exceeded";
+        return response;
+    }
+    
+    try {
+        response.result = method.handler(request.params);
+    } catch (const std::exception& e) {
+        response.errorCode = static_cast<int>(RpcErrorCode::INTERNAL_ERROR);
+        response.errorMessage = e.what();
+    }
+    
+    return response;
+}
+
+std::string RpcServer::Impl::parseJsonRpc(const std::string& data, RpcRequest& request) {
+    request.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+    nlohmann::json parsed = nlohmann::json::parse(data, nullptr, false);
+    if (parsed.is_discarded() || !parsed.is_object()) {
+        return "Invalid JSON-RPC request";
+    }
+
+    auto idIt = parsed.find("id");
+    if (idIt != parsed.end()) {
+        if (idIt->is_string()) {
+            request.id = idIt->get<std::string>();
+        } else if (idIt->is_number_integer()) {
+            request.id = std::to_string(idIt->get<int64_t>());
+        } else if (idIt->is_number_unsigned()) {
+            request.id = std::to_string(idIt->get<uint64_t>());
+        } else if (idIt->is_number_float()) {
+            request.id = std::to_string(idIt->get<double>());
+        }
+    }
+
+    auto methodIt = parsed.find("method");
+    if (methodIt == parsed.end() || !methodIt->is_string()) {
+        return "Missing method field";
+    }
+    request.method = methodIt->get<std::string>();
+
+    auto paramsIt = parsed.find("params");
+    if (paramsIt != parsed.end()) {
+        request.params = paramsIt->dump();
+    } else {
+        request.params.clear();
+    }
+
+    return "";
+}
+
+std::string RpcServer::Impl::formatResponse(const RpcResponse& response) {
+    std::stringstream ss;
+    ss << "{\"jsonrpc\":\"2.0\"";
+    
+    if (!response.id.empty()) {
+        ss << ",\"id\":";
+        bool isNumeric = !response.id.empty() && 
+                         std::all_of(response.id.begin(), response.id.end(), ::isdigit);
+        if (isNumeric) {
+            ss << response.id;
+        } else {
+            ss << "\"" << response.id << "\"";
+        }
+    }
+    
+    if (response.errorCode != 0) {
+        ss << ",\"error\":{\"code\":" << response.errorCode;
+        ss << ",\"message\":\"" << response.errorMessage << "\"}";
+    } else {
+        ss << ",\"result\":" << response.result;
+    }
+    
+    ss << "}";
+    return ss.str();
+}
+
+bool RpcServer::Impl::checkRateLimit(const std::string& clientIp, int limit) {
+    uint64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    
+    auto it = rateLimits.find(clientIp);
+    if (it == rateLimits.end()) {
+        rateLimits[clientIp] = {now, 1};
+        return true;
+    }
+    
+    RateLimitEntry& entry = it->second;
+    
+    if (now - entry.windowStart >= static_cast<uint64_t>(rateLimitWindow)) {
+        entry.windowStart = now;
+        entry.requestCount = 1;
+        return true;
+    }
+    
+    if (entry.requestCount >= limit) {
+        return false;
+    }
+    
+    entry.requestCount++;
+    return true;
+}
+
+std::string RpcServer::Impl::generateSessionId() {
+    std::stringstream ss;
+    uint64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    ss << std::hex << now;
+    return ss.str();
+}
+
+void RpcServer::Impl::cleanupSessions() {
+    std::lock_guard<std::mutex> lock(sessionMtx);
+    
+    uint64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    
+    for (auto it = sessions.begin(); it != sessions.end();) {
+        if (now - it->second.lastActivity > 3600) {
+            it = sessions.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+}
+}
