@@ -3572,6 +3572,10 @@ double atomsToNgt(uint64_t atoms) const {
 }
 
 std::string addressFromPubKey(const crypto::PublicKey& pubKey) const {
+    // If this is our NAAN agent's key, credit to wallet address instead
+    if (attachedAgentIdentity_.valid() && pubKey == attachedAgentIdentity_.id) {
+        if (!address_.empty()) return address_;
+    }
     std::string hex = crypto::toHex(pubKey);
     if (hex.size() < 52) return {};
     return "ngt1" + hex.substr(0, 52);
