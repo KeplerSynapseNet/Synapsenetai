@@ -83,9 +83,7 @@ To **restore** an existing wallet on a fresh node:
 
 ## Demo
 
-<p align="center">
-  <video src="pictures/kepler%2033.mp4" width="100%" controls></video>
-</p>
+https://github.com/KeplerSynapseNet/Synapsenetai/raw/main/pictures/kepler%2033.mp4
 
 ## Screenshots
 
