@@ -364,34 +364,9 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-### Windows (WSL2 recommended)
+### Windows
 
-1. Install WSL2 + Ubuntu.
-2. Open Ubuntu and follow the Linux build steps above.
-
-### Windows (MSYS2)
-
-1. Install MSYS2: https://www.msys2.org
-2. Open the **MSYS2 MSYS** shell and install deps:
-
-```bash
-pacman -Syu
-pacman -S --needed base-devel cmake ninja pkgconf git ncurses sqlite
-```
-
-3. Configure + build + test:
-
-```bash
-cmake -S KeplerSynapseNet -B build -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DUSE_LLAMA_CPP=OFF \
-  -DUSE_SECP256K1=ON \
-  -DBUILD_PRIVACY=OFF \
-  -DBUILD_IDE=OFF \
-  -DBUILD_TESTS=ON
-cmake --build build --parallel 2
-ctest --test-dir build --output-on-failure --parallel 2
-```
+Windows users should use **Docker** to run SynapseNet. See the [Docker](#docker) section above.
 
 ### Docker (Windows/macOS/Linux fallback)
 
