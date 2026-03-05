@@ -81,6 +81,12 @@ To **restore** an existing wallet on a fresh node:
 3. Paste your 24-word seed phrase (words separated by spaces)
 4. Press **Enter** — your wallet is restored
 
+## Demo
+
+<p align="center">
+  <video src="pictures/kepler%2033.mp4" width="100%" controls></video>
+</p>
+
 ## Screenshots
 
 <p align="center">
