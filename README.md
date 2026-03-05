@@ -88,9 +88,7 @@ https://github.com/KeplerSynapseNet/Synapsenetai/raw/main/pictures/kepler%2033.m
 ## Screenshots
 
 <p align="center">
-  <img src="pictures/wow.png" alt="SynapseNet WOW" width="32%" />
-  <img src="pictures/synapsenet_ai_agent.png" alt="KeplerSynapseNet" width="32%" />
-  <img src="pictures/wow2.png" alt="SynapseNet WOW 2" width="32%" />
+  <img src="pictures/synapsenet_ai_agent.png" alt="KeplerSynapseNet" width="60%" />
 </p>
 
 
