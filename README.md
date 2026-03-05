@@ -42,6 +42,20 @@ SynapseNet is a local-first AI network where nodes contribute and validate knowl
 
 Unlike Bitcoin mining (which burns energy on meaningless hashes), SynapseNet mining produces **real knowledge** stored in a decentralized network. Every NGT is backed by verified information.
 
+### You Don't Need Expensive Hardware
+
+You don't need super powerful GPUs to mine NGT. A phone, a laptop, or any office PC is enough.
+
+In the future, Kepler plans to introduce **GPU rental** — rent a server with an RTX 5090 (or similar) and pay with NGT. If you are a seller, you will need high-end hardware — this can be GPUs, dedicated AI servers, or specialized compute rigs.
+
+### The Power of the Network
+
+SynapseNet allows **any local AI** to join the network. The bigger the network grows, the stronger your local AI becomes — because it continuously updates from the live data of all nodes.
+
+Think about it: ChatGPT gets updated by corporations maybe once a month. **SynapseNet updates in real time.** If the network grows large enough, any local AI connected to SynapseNet will be more powerful than ChatGPT.
+
+This will be the **world's first public living intelligence** — a collective intellect that no one controls. Society itself creates it.
+
 ## How Mining Works
 
 ```
