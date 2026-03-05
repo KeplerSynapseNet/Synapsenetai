@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="http://dc4p33qjalqqpk6ggy2p7axv57rdj53lrlgeq3bfto3laoiifzh5odad.onion"><img src="https://img.shields.io/badge/Tor-7D4698?style=flat-square&logo=torproject&logoColor=white" alt="Tor"></a>
+  <a href="http://vkqyb4cwfnybhcbz6sub7dhkhgn3vwxyxl7lt6uvdrzax6gaoaaxbxqd.onion"><img src="https://img.shields.io/badge/Tor-7D4698?style=flat-square&logo=torproject&logoColor=white" alt="Tor"></a>
   <a href="https://www.blockchain.com/btc/address/bc1q5pkemq7q84ld4rf5kwtafp7jfl9dlf3pc4z9d4"><img src="https://img.shields.io/badge/Bitcoin-F7931A?style=flat-square&logo=bitcoin&logoColor=white" alt="Bitcoin"></a>
   <a href="https://synapsenetai.org"><img src="https://img.shields.io/badge/Website-synapsenetai.org-0D1117?style=flat-square&logo=googlechrome&logoColor=white" alt="Website"></a>
 </p>
@@ -32,6 +32,41 @@ SynapseNet is a decentralized peer-to-peer network for collective intelligence. 
 
 SynapseNet is a local-first AI network where nodes contribute and validate knowledge using deterministic consensus (PoE). The network is designed to be censorship-resistant, decentralized, and community-driven, with optional local AI chat and Web 4.0 context injection (clearnet/onion).
 
+## What is NGT?
+
+**NGT** is the native token of SynapseNet. You earn NGT by running a node and contributing knowledge to the network.
+
+- Every node runs an AI agent (NAAN) that automatically searches the internet, creates verified knowledge entries, and submits them to the network.
+- Validators vote on entries. Once finalized, the author earns NGT.
+- No GPUs required. No staking required. Just run the node on any laptop.
+
+Unlike Bitcoin mining (which burns energy on meaningless hashes), SynapseNet mining produces **real knowledge** stored in a decentralized network. Every NGT is backed by verified information.
+
+## How Mining Works
+
+```
+1. NAAN Agent searches the internet (DuckDuckGo, Brave)
+2. Creates a Research Draft with sources and citations
+3. Draft passes Review Pipeline (intent, duplicates, PoW)
+4. Submitted to Knowledge Network as a PoE Entry
+5. Validators auto-vote → entry becomes FINALIZED
+6. Epoch Rewards → NGT credited to your wallet every ~30 seconds
+```
+
+No manual action needed — just start the node and it mines automatically.
+
+## Wallet Backup & Restore
+
+When you first start SynapseNet, it creates a new wallet with a **24-word seed phrase**.
+
+> **⚠ IMPORTANT:** Write down your seed phrase on paper. It is the ONLY way to recover your wallet. Do NOT store it digitally. Do NOT share it with anyone.
+
+To **restore** an existing wallet on a fresh node:
+1. Start the node (it will show the Welcome screen)
+2. Press **`2`** — Import Wallet
+3. Paste your 24-word seed phrase (words separated by spaces)
+4. Press **Enter** — your wallet is restored
+
 ## Screenshots
 
 <p align="center">
@@ -45,7 +80,7 @@ SynapseNet is a local-first AI network where nodes contribute and validate knowl
 
 - **GitHub:** https://github.com/KeplerSynapseNet
 - **Official:** https://synapsenetai.org
-- **Onion:** http://dc4p33qjalqqpk6ggy2p7axv57rdj53lrlgeq3bfto3laoiifzh5odad.onion
+- **Onion:** http://vkqyb4cwfnybhcbz6sub7dhkhgn3vwxyxl7lt6uvdrzax6gaoaaxbxqd.onion
 
 ### Bitcoin
 kepler
