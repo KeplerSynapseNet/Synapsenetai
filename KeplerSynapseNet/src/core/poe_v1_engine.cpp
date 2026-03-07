@@ -607,7 +607,7 @@ PoeSubmitResult PoeV1Engine::submit(
 
     if (autoFinalize) {
         std::vector<crypto::PublicKey> validatorSet = getDeterministicValidators();
-        if (validatorSet.empty() && cfg.validatorMode != "stake") {
+        if (validatorSet.empty() && cfg.validatorMode != "stake" && cfg.allowSelfBootstrapValidator) {
             validatorSet.push_back(entry.authorPubKey);
             setStaticValidators(validatorSet);
             validatorSet = getDeterministicValidators();

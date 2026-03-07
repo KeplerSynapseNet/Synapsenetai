@@ -145,6 +145,7 @@ struct NodeConfig {
     bool testnet = false;
     bool regtest = false;
     bool discovery = true;
+    bool networkUseHardcodedBootstrap = true;
     bool showVersion = false;
     bool showHelp = false;
     bool privacyMode = false;
@@ -3592,6 +3593,7 @@ uint64_t poeMinStakeAtoms() const {
 void updatePoeValidatorsFromStake() {
     if (!poeV1_ || !transfer_) return;
     if (config_.poeValidatorMode != "stake") return;
+    const bool allowSelfBootstrap = poeV1_->getConfig().allowSelfBootstrapValidator;
 
     crypto::PublicKey selfPub{};
     bool hasSelfPub = false;
@@ -3666,7 +3668,7 @@ void updatePoeValidatorsFromStake() {
         return a == b;
     }), candidates.end());
 
-    if (candidates.empty() && hasSelfPub) candidates.push_back(selfPub);
+    if (candidates.empty() && hasSelfPub && allowSelfBootstrap) candidates.push_back(selfPub);
     if (candidates.empty()) return;
 
     poeV1_->setStaticValidators(candidates);
@@ -7852,6 +7854,21 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
         if (!config_.quantumSecuritySetByCli) {
             config_.quantumSecurity = cfg.getBool("security.quantum_enabled", config_.quantumSecurity);
         }
+        if (config_.poeValidators.empty()) {
+            config_.poeValidators = cfg.getString("poe.validators", "");
+        }
+        if (config_.poeValidatorMode == "static") {
+            const std::string configuredMode = cfg.getString("poe.validator_mode", config_.poeValidatorMode);
+            if (!configuredMode.empty()) {
+                config_.poeValidatorMode = configuredMode;
+            }
+        }
+        if (config_.poeMinStake == "0") {
+            const std::string configuredMinStake = cfg.getString("poe.validator_min_stake", config_.poeMinStake);
+            if (!configuredMinStake.empty()) {
+                config_.poeMinStake = configuredMinStake;
+            }
+        }
         if (config_.securityLevelSetByCli && config_.securityLevel == "standard" && !config_.quantumSecuritySetByCli) {
             config_.quantumSecurity = false;
         }
@@ -7935,6 +7952,8 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
         config_.networkVoteDedupWindowSeconds = readBoundedU32("network.scale.vote_dedup_window_seconds", 600, 1, 86400);
         config_.networkVoteDedupMaxEntries = readBoundedU32("network.scale.vote_dedup_max_entries", 20000, 64, 2000000);
         config_.dbCacheSize = cfg.getInt("dbcache", 450);
+        config_.networkUseHardcodedBootstrap =
+            cfg.getBool("network.discovery.use_hardcoded_bootstrap", true);
 
         // Remote model routing (opt-in)
         remotePricePerRequestAtoms_ = static_cast<uint64_t>(
@@ -8148,25 +8167,29 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
             30, utils::Config::instance().getInt64("network.discovery.bootstrap_quarantine_seconds", 600)));
         discovery_->setConfig(discCfg);
         
-        if (config_.testnet) {
-            discovery_->addBootstrap("testnet-seed1.synapsenet.io", 18333);
-            discovery_->addBootstrap("testnet-seed2.synapsenet.io", 18333);
-            discovery_->addDnsSeed("testnet-seed1.synapsenet.io");
-            discovery_->addDnsSeed("testnet-seed2.synapsenet.io");
+        if (config_.networkUseHardcodedBootstrap) {
+            if (config_.testnet) {
+                discovery_->addBootstrap("testnet-seed1.synapsenet.io", 18333);
+                discovery_->addBootstrap("testnet-seed2.synapsenet.io", 18333);
+                discovery_->addDnsSeed("testnet-seed1.synapsenet.io");
+                discovery_->addDnsSeed("testnet-seed2.synapsenet.io");
+            } else if (config_.regtest) {
+                utils::Logger::info("Regtest mode: no bootstrap nodes");
+            } else {
+                // Primary seed node (VPS - Finland)
+                discovery_->addBootstrap("144.31.169.103", 8333);
+                // DNS-based seeds (future)
+                discovery_->addBootstrap("seed1.synapsenet.io", 8333);
+                discovery_->addBootstrap("seed2.synapsenet.io", 8333);
+                discovery_->addBootstrap("seed3.synapsenet.io", 8333);
+                discovery_->addBootstrap("seed4.synapsenet.io", 8333);
+                discovery_->addDnsSeed("seed1.synapsenet.io");
+                discovery_->addDnsSeed("seed2.synapsenet.io");
+                discovery_->addDnsSeed("seed3.synapsenet.io");
+                discovery_->addDnsSeed("seed4.synapsenet.io");
+            }
         } else if (config_.regtest) {
             utils::Logger::info("Regtest mode: no bootstrap nodes");
-        } else {
-            // Primary seed node (VPS - Finland)
-            discovery_->addBootstrap("144.31.169.103", 8333);
-            // DNS-based seeds (future)
-            discovery_->addBootstrap("seed1.synapsenet.io", 8333);
-            discovery_->addBootstrap("seed2.synapsenet.io", 8333);
-            discovery_->addBootstrap("seed3.synapsenet.io", 8333);
-            discovery_->addBootstrap("seed4.synapsenet.io", 8333);
-            discovery_->addDnsSeed("seed1.synapsenet.io");
-            discovery_->addDnsSeed("seed2.synapsenet.io");
-            discovery_->addDnsSeed("seed3.synapsenet.io");
-            discovery_->addDnsSeed("seed4.synapsenet.io");
         }
         
         for (const auto& node : config_.seedNodes) {
@@ -8331,8 +8354,18 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
 	        poeCfg.validatorMode = config_.poeValidatorMode;
 	        poeCfg.validatorMinStakeAtoms = poeMinStakeAtoms();
 	        poeCfg.powBits = (config_.dev || config_.regtest) ? 12 : 16;
-	        poeCfg.validatorsN = 1;
-	        poeCfg.validatorsM = 1;
+            const bool strictMainnetPoe = !(config_.dev || config_.regtest);
+            int64_t validatorsN = runtimeCfg.getInt64("poe.validators_n", strictMainnetPoe ? 3 : 1);
+            if (validatorsN < 1) validatorsN = 1;
+            if (validatorsN > 64) validatorsN = 64;
+            int64_t validatorsM = runtimeCfg.getInt64("poe.validators_m", strictMainnetPoe ? 2 : 1);
+            if (validatorsM < 1) validatorsM = 1;
+            if (validatorsM > validatorsN) validatorsM = validatorsN;
+	        poeCfg.validatorsN = static_cast<uint32_t>(validatorsN);
+	        poeCfg.validatorsM = static_cast<uint32_t>(validatorsM);
+            poeCfg.allowSelfBootstrapValidator = runtimeCfg.getBool(
+                "poe.allow_self_validator_bootstrap",
+                !strictMainnetPoe);
             {
                 int64_t noveltyBands = runtimeCfg.getInt64("poe.novelty_bands", static_cast<int64_t>(poeCfg.noveltyBands));
                 if (noveltyBands < 0) noveltyBands = 0;
@@ -8409,7 +8442,7 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
                 addValidatorHex(cur);
             }
 
-            if (validators.empty() && hasSelfPub) {
+            if (validators.empty() && hasSelfPub && poeCfg.allowSelfBootstrapValidator) {
                 validators.push_back(selfPub);
             }
 
@@ -9414,7 +9447,7 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
                             updateSignerFromKeys();
                             if (poeV1_) {
                                 auto current = poeV1_->getStaticValidators();
-                                if (current.empty()) {
+                                if (current.empty() && poeV1_->getConfig().allowSelfBootstrapValidator) {
                                     auto pubV = keys_->getPublicKey();
                                     if (pubV.size() >= crypto::PUBLIC_KEY_SIZE) {
                                         crypto::PublicKey pk{};

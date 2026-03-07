@@ -585,6 +585,44 @@ static void testStakeIdentityDeterministicValidators() {
     std::filesystem::remove_all(tmpDir, ec);
 }
 
+static void testSubmitDoesNotSelfBootstrapValidatorWhenDisabled() {
+    auto uniq = std::to_string(static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count()));
+    auto tmpDir = std::filesystem::temp_directory_path() / ("synapsenet_poe_no_self_bootstrap_" + uniq);
+    std::error_code ec;
+    std::filesystem::remove_all(tmpDir, ec);
+    std::filesystem::create_directories(tmpDir, ec);
+    std::string dbPath = (tmpDir / "poe.db").string();
+
+    synapse::core::PoeV1Engine engine;
+    assert(engine.open(dbPath));
+
+    synapse::core::PoeV1Config cfg;
+    cfg.powBits = 8;
+    cfg.limits.minPowBits = cfg.powBits;
+    cfg.limits.maxPowBits = 28;
+    cfg.validatorsN = 1;
+    cfg.validatorsM = 1;
+    cfg.allowSelfBootstrapValidator = false;
+    engine.setConfig(cfg);
+
+    auto sk = makeSk(91);
+    auto submitRes = engine.submit(
+        synapse::core::poe_v1::ContentType::TEXT,
+        "mainnet_guard_title",
+        std::string(80, 'g'),
+        {},
+        sk,
+        true
+    );
+    assert(submitRes.ok);
+    assert(!submitRes.finalized);
+    assert(submitRes.acceptanceReward == 0);
+    assert(engine.getStaticValidators().empty());
+
+    engine.close();
+    std::filesystem::remove_all(tmpDir, ec);
+}
+
 int main() {
     testCanonicalize();
     testCodeCanonicalize();
@@ -602,6 +640,7 @@ int main() {
     testVoteSelectionAndDeterministicFinalizationRecord();
     testOpenRepairsEntryAndFinalizationCounters();
     testStakeIdentityDeterministicValidators();
+    testSubmitDoesNotSelfBootstrapValidatorWhenDisabled();
     std::cout << "PoE v1 determinism tests passed\n";
     return 0;
 }

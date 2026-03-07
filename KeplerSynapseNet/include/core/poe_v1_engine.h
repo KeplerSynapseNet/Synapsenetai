@@ -16,6 +16,7 @@ struct PoeV1Config {
     uint64_t validatorMinStakeAtoms = 0;
     uint32_t validatorsN = 1;
     uint32_t validatorsM = 1;
+    bool allowSelfBootstrapValidator = true;
     uint32_t powBits = 16;
     uint64_t powMaxAttempts = 1000000ULL; // max PoW attempts before giving up (0 = unlimited)
     uint64_t acceptanceBaseReward = 10000000ULL;
