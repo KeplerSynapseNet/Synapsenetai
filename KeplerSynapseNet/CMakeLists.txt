@@ -183,6 +183,7 @@ set(CORE_SOURCES
     src/core/state_manager.cpp
     src/core/tor_bridge_provider.cpp
     src/core/tor_bridge_utils.cpp
+    src/core/tor_peer_identity.cpp
     src/core/tor_process_guard.cpp
     src/core/tor_route_policy.cpp
     src/core/transfer.cpp

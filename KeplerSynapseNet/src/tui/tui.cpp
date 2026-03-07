@@ -2027,7 +2027,7 @@ void TUI::Impl::drawDashboard() {
     if (boxX < 0) boxX = 0;
 
     row += 1;
-    drawBox(row, boxX, 14, boxW, "Node Summary");
+    drawBox(row, boxX, 15, boxW, "Node Summary");
     int innerRow = row + 1;
     const bool nodeOnline = state.networkOnline || state.listeningPort != 0;
     std::string torLabel;
@@ -2067,6 +2067,9 @@ void TUI::Impl::drawDashboard() {
         " / " + (info.torRuntimeMode.empty() ? std::string("n/a") : info.torRuntimeMode) +
         "  SOCKS port: " + (info.torSocksPort == 0 ? std::string("n/a") : std::to_string(info.torSocksPort)));
     printClippedLine(innerRow++, boxX + 2, boxW - 4,
+        "Tor seed: " + truncEnd(info.torSeedAddress.empty() ? std::string("n/a") : info.torSeedAddress, 42) +
+        "  Onion: " + truncEnd(info.onionAddress.empty() ? std::string("n/a") : info.onionAddress, 20));
+    printClippedLine(innerRow++, boxX + 2, boxW - 4,
         "NAAN: " + naanLabel +
         "  Auto-start: ON  Manual knowledge add: [K] then [C]");
     {
@@ -2099,7 +2102,7 @@ void TUI::Impl::drawDashboard() {
         "  Conn c/t/o: " + info.connectorClearnetState + "/" + info.connectorTorState + "/" + info.connectorOnionState);
     printClippedLine(innerRow++, boxX + 2, boxW - 4, "Config: " + truncStart(info.configPath.empty() ? "n/a" : info.configPath, boxW - 12));
 
-    row += 15;
+    row += 16;
     drawBox(row, boxX, 8, boxW, "Main Menu & Hotkeys");
     innerRow = row + 2;
     attron(A_BOLD | COLOR_PAIR(1));
@@ -2313,7 +2316,7 @@ void TUI::Impl::drawPeers() {
     int boxX = 3;
     drawBox(row, boxX, 3, boxW, "Connected Nodes");
     int inner = row + 2;
-    mvprintw(inner++, boxX + 2, "%-18s %-22s %-8s %-8s", "NODE ID", "ADDRESS", "LAT(ms)", "VERSION");
+    mvprintw(inner++, boxX + 2, "%-18s %-30s %-12s %-24s", "NODE ID", "PEER", "TRANSPORT", "RAW");
     mvwhline(stdscr, inner++, boxX + 1, ACS_HLINE, boxW - 2);
 
     int y = inner;
@@ -2322,8 +2325,10 @@ void TUI::Impl::drawPeers() {
     for (const auto& p : state.peers) {
         if (shown >= maxRows) break;
         std::string id = truncEnd(p.id, 18);
-        std::string addr = truncEnd(p.address + ":" + std::to_string(p.port), 22);
-        mvprintw(y, boxX + 2, "%-18s %-22s %-8lu %-8s", id.c_str(), addr.c_str(), p.latency, p.version.c_str());
+        std::string displayAddr = truncEnd(p.displayAddress.empty() ? p.address : p.displayAddress, 30);
+        std::string transport = truncEnd(p.transport.empty() ? std::string("clearnet") : p.transport, 12);
+        std::string rawAddr = truncEnd(p.rawAddress.empty() ? (p.address + ":" + std::to_string(p.port)) : p.rawAddress, 24);
+        mvprintw(y, boxX + 2, "%-18s %-30s %-12s %-24s", id.c_str(), displayAddr.c_str(), transport.c_str(), rawAddr.c_str());
         y++; shown++;
     }
 
@@ -5317,6 +5322,8 @@ void TUI::updateAttachedAgentStatus(const AttachedAgentStatusInfo& info) {
         prev.torControlReachable != info.torControlReachable ||
         prev.torControlPort != info.torControlPort ||
         prev.onionServiceState != info.onionServiceState ||
+        prev.onionAddress != info.onionAddress ||
+        prev.torSeedAddress != info.torSeedAddress ||
         prev.torBootstrapPercent != info.torBootstrapPercent ||
         prev.torSocksPort != info.torSocksPort ||
         prev.torRuntimeMode != info.torRuntimeMode) {
@@ -5330,6 +5337,7 @@ void TUI::updateAttachedAgentStatus(const AttachedAgentStatusInfo& info) {
                        " tor_web=" + std::string(info.torReadyForWeb ? "yes" : "no") +
                        " tor_onion=" + std::string(info.torReadyForOnion ? "yes" : "no") +
                        " onion_service=" + std::string(info.torReadyForOnionService ? "yes" : "no") +
+                       " seed=" + (info.torSeedAddress.empty() ? std::string("n/a") : info.torSeedAddress) +
                        " control=" + std::string(info.torControlReachable ? "yes" : "no") +
                        " degraded=" + (info.torDegraded ? std::string("yes") : std::string("no")));
     }

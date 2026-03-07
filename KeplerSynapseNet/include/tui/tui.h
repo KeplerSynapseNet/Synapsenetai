@@ -129,6 +129,9 @@ struct NodeInfo {
     std::string nodeId;
     std::string id;
     std::string address;
+    std::string displayAddress;
+    std::string rawAddress;
+    std::string transport;
     std::string location;
     uint16_t port;
     uint64_t latency;
@@ -232,6 +235,8 @@ struct AttachedAgentStatusInfo {
     bool p2pFallbackAllowed = false;
     bool onionServiceActive = false;
     std::string onionServiceState;
+    std::string onionAddress;
+    std::string torSeedAddress;
     std::string routeMode;
     std::string torRuntimeMode;
     std::string policyHash;

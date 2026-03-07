@@ -167,6 +167,9 @@ struct OnionService::Impl {
             if (home) {
                 paths.push_back(std::string(home) + "/.tor/control_auth_cookie");
             }
+            paths.push_back("/run/tor/control.authcookie");
+            paths.push_back("/var/run/tor/control.authcookie");
+            paths.push_back("/var/lib/tor/control.authcookie");
             paths.push_back("/var/lib/tor/control_auth_cookie");
         }
         

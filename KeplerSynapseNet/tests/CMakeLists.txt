@@ -212,6 +212,10 @@ add_executable(test_tor_onion_service_policy test_tor_onion_service_policy.cpp)
 target_link_libraries(test_tor_onion_service_policy synapsed_core)
 add_test(NAME TorOnionServicePolicyTests COMMAND test_tor_onion_service_policy)
 
+add_executable(test_tor_peer_identity test_tor_peer_identity.cpp)
+target_link_libraries(test_tor_peer_identity synapsed_core)
+add_test(NAME TorPeerIdentityTests COMMAND test_tor_peer_identity)
+
 # Task 5: ModelLoader Unit Tests
 if(GTEST_FOUND)
     add_executable(test_model_loader test_model_loader.cpp)
@@ -300,6 +304,7 @@ set(SYNAPSENET_TEST_TARGETS
     test_tor_external_path
     test_tor_managed_startup_path
     test_tor_onion_service_policy
+    test_tor_peer_identity
     test_protocol_fuzz
     test_tor_no_clearnet_leak
     test_bip39_vectors

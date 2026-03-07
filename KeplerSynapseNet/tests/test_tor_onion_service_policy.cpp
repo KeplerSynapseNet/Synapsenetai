@@ -36,9 +36,23 @@ static void testOnionPolicyBoundsFallback() {
     assert(out.targetPort == 4040);
 }
 
+static void testOnionServiceCanBeActiveWithoutTorRequired() {
+    synapse::core::TorOnionServiceStateInput input;
+    input.torRequired = false;
+    input.privacyModeEnabled = true;
+    input.torSocksReachable = true;
+    input.torWebReady = true;
+    input.torControlReachable = true;
+    input.onionServiceActive = true;
+
+    assert(synapse::core::evaluateTorOnionServiceState(input) == "ACTIVE");
+    assert(synapse::core::evaluateTorReadyForOnionService(input));
+}
+
 int main() {
     testDefaultOnionPolicy();
     testOnionPolicyOverrides();
     testOnionPolicyBoundsFallback();
+    testOnionServiceCanBeActiveWithoutTorRequired();
     return 0;
 }

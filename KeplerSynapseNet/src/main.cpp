@@ -62,6 +62,7 @@
 #include "core/tor_process_guard.h"
 #include "core/tor_bridge_provider.h"
 #include "core/tor_bridge_utils.h"
+#include "core/tor_peer_identity.h"
 #include "core/tor_route_policy.h"
 #if SYNAPSE_BUILD_TUI
 #include "tui/tui.h"
@@ -93,6 +94,13 @@ using json = nlohmann::json;
 static std::atomic<bool> g_running{true};
 static std::atomic<bool> g_reloadConfig{false};
 static std::atomic<bool> g_daemonMode{false};
+
+static std::string makeTorSessionDisplayId() {
+    std::array<uint8_t, 6> bytes{};
+    std::random_device rd;
+    for (auto& byte : bytes) byte = static_cast<uint8_t>(rd());
+    return "tor:" + crypto::toHex(bytes.data(), bytes.size());
+}
 
 // Forward declarations
 std::string formatUptime(uint64_t seconds);
@@ -195,7 +203,7 @@ struct SystemInfo {
 
 class SynapseNet {
 public:
-    SynapseNet() : running_(false), startTime_(0), syncProgress_(0.0) {}
+    SynapseNet() : running_(false), startTime_(0), syncProgress_(0.0), torSessionDisplayId_(makeTorSessionDisplayId()) {}
     ~SynapseNet() { shutdown(); }
     
     bool initialize(const NodeConfig& config) {
@@ -709,6 +717,70 @@ bool probeTorControl() const {
 
 bool isOnionServiceActive() const {
     return privacy_ && !privacy_->getOnionAddress().empty();
+}
+
+bool isLoopbackPeerAddress(const std::string& address) const {
+    return address == "127.0.0.1" || address == "::1" || address.rfind("127.", 0) == 0;
+}
+
+bool isDiscoveryEligiblePeerAddress(const std::string& address) const {
+    if (isLoopbackPeerAddress(address)) return false;
+    in_addr ipv4{};
+    return inet_pton(AF_INET, address.c_str(), &ipv4) == 1;
+}
+
+std::string activeOnionAddress() const {
+    return privacy_ ? privacy_->getOnionAddress() : std::string();
+}
+
+std::string activeTorSeedAddress() const {
+    const std::string onion = activeOnionAddress();
+    if (onion.empty()) return {};
+    const uint16_t port = network_ ? network_->getPort() : config_.port;
+    return onion + ":" + std::to_string(port);
+}
+
+std::optional<core::PeerHelloInfo> getPeerHelloInfo(const std::string& peerId) const {
+    std::lock_guard<std::mutex> lock(peerHelloMtx_);
+    auto it = peerHelloById_.find(peerId);
+    if (it == peerHelloById_.end()) return std::nullopt;
+    return it->second;
+}
+
+core::PeerDisplayInfo getPeerDisplayInfo(const network::Peer& peer) const {
+    return core::selectPeerDisplayInfo(peer.address, peer.port, getPeerHelloInfo(peer.id));
+}
+
+core::PeerHelloInfo buildLocalPeerHello(const network::Peer& peer) const {
+    core::PeerHelloInfo hello;
+    const std::string onion = activeOnionAddress();
+    const bool hasOnion = core::isValidOnionHost(onion);
+    const bool rawOnion = core::isValidOnionHost(peer.address);
+    const bool loopbackInbound = !peer.isOutbound && isLoopbackPeerAddress(peer.address);
+    const bool torPreferred = agentTorRequired_.load();
+    const uint16_t advertisedPort = network_ ? network_->getPort() : config_.port;
+
+    if (hasOnion && (rawOnion || loopbackInbound || torPreferred)) {
+        hello.transport = "tor-onion";
+        hello.advertisedHost = onion;
+        hello.advertisedPort = advertisedPort;
+        hello.displayId = torSessionDisplayId_;
+    } else if (torPreferred) {
+        hello.transport = "tor-socks";
+        hello.displayId = torSessionDisplayId_;
+    } else {
+        hello.transport = "clearnet";
+    }
+
+    return hello;
+}
+
+void sendPeerHello(const std::string& peerId) {
+    if (!network_) return;
+    const auto peer = network_->getPeer(peerId);
+    if (peer.id.empty()) return;
+    auto msg = makeMessage("peer_hello", core::serializePeerHelloPayload(buildLocalPeerHello(peer)));
+    network_->send(peerId, msg);
 }
 
 bool likelyTor9050vs9150ConflictHint(bool torSocksReachable) const {
@@ -5781,6 +5853,8 @@ std::string handleRpcNaanStatus(const std::string& paramsJson) {
     out["torSocksPort"] = torSocksPort;
     out["torControlPort"] = torControlPort;
     out["torControlReachable"] = torControlReachable;
+    out["onionAddress"] = activeOnionAddress();
+    out["torSeedAddress"] = activeTorSeedAddress();
     out["torConflictHint9050"] = torConflictHint9050;
     out["torBootstrapState"] = torBootstrapState;
     out["torBootstrapPercent"] = torBootstrapPercent;
@@ -6315,6 +6389,8 @@ std::string handleRpcNodeStatus(const std::string& paramsJson) {
     out["torSocksPort"] = configuredTorSocksPort();
     out["torControlPort"] = configuredTorControlPort();
     out["torControlReachable"] = torControlReachableNode;
+    out["onionAddress"] = activeOnionAddress();
+    out["torSeedAddress"] = activeTorSeedAddress();
     out["torConflictHint9050"] = likelyTor9050vs9150ConflictHint(torReachableNode);
     out["torBootstrapState"] = core::evaluateTorBootstrapState(torBootstrapNode);
     out["torBootstrapPercent"] = core::evaluateTorBootstrapPercent(torBootstrapNode);
@@ -6405,10 +6481,15 @@ std::string handleRpcNodePeers(const std::string& paramsJson) {
     json out = json::array();
     if (!network_) return out.dump();
     for (const auto& p : network_->getPeers()) {
+        const auto display = getPeerDisplayInfo(p);
         json item;
         item["id"] = p.id;
         item["address"] = p.address;
         item["port"] = p.port;
+        item["rawAddress"] = display.rawAddress;
+        item["rawPort"] = display.rawPort;
+        item["displayAddress"] = display.displayAddress;
+        item["transport"] = display.transport;
         item["connectedAt"] = p.connectedAt;
         item["lastSeen"] = p.lastSeen;
         item["bytesRecv"] = p.bytesRecv;
@@ -6446,12 +6527,23 @@ std::string handleRpcNodeSeeds(const std::string& paramsJson) {
     json out;
     out["bootstrap"] = json::array();
     out["dnsSeeds"] = json::array();
+    const std::string onion = activeOnionAddress();
+    if (core::isValidOnionHost(onion)) {
+        json item;
+        item["address"] = onion;
+        item["port"] = network_ ? network_->getPort() : config_.port;
+        item["transport"] = "tor-onion";
+        item["active"] = isOnionServiceActive();
+        item["seedAddress"] = activeTorSeedAddress();
+        out["bootstrap"].push_back(item);
+    }
     if (!discovery_) return out.dump();
 
     for (const auto& bn : discovery_->getBootstrapNodes()) {
         json item;
         item["address"] = bn.address;
         item["port"] = bn.port;
+        item["transport"] = "clearnet";
         item["active"] = bn.active;
         item["failures"] = bn.failures;
         item["lastSeen"] = bn.lastSeen;
@@ -8799,6 +8891,11 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
                 " privacy retry attempts");
         }
         utils::Logger::info("Privacy mode enabled: " + onion);
+        utils::Logger::info("Tor control reachable: " + std::string(probeTorControl() ? "yes" : "no"));
+        utils::Logger::info("Onion service active: " + std::string(isOnionServiceActive() ? "yes" : "no"));
+        if (!activeTorSeedAddress().empty()) {
+            utils::Logger::info("Tor seed address: " + activeTorSeedAddress());
+        }
         return true;
     }
     
@@ -9501,11 +9598,15 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
                     std::vector<tui::NodeInfo> peers;
                     auto networkPeers = network_->getPeers();
                     for (const auto& peer : networkPeers) {
+                        const auto display = getPeerDisplayInfo(peer);
                         tui::NodeInfo nodeInfo;
                         nodeInfo.nodeId = peer.id;
                         nodeInfo.id = peer.id.substr(0, 16) + "...";
-                        nodeInfo.address = peer.address;
-                        nodeInfo.location = "Unknown";
+                        nodeInfo.address = display.displayAddress;
+                        nodeInfo.displayAddress = display.displayAddress;
+                        nodeInfo.rawAddress = core::formatPeerAddress(display.rawAddress, display.rawPort);
+                        nodeInfo.transport = display.transport;
+                        nodeInfo.location = core::peerTransportLabel(display.transport);
                         nodeInfo.port = peer.port;
                         nodeInfo.latency = 50;
                         nodeInfo.ping = 50;
@@ -9777,6 +9878,8 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
                         attachedInfo.miningCandidateHash = crypto::toHex(miningCandidateHash_);
                     }
                     attachedInfo.onionServiceActive = isOnionServiceActive();
+                    attachedInfo.onionAddress = activeOnionAddress();
+                    attachedInfo.torSeedAddress = activeTorSeedAddress();
                     core::TorOnionServiceStateInput attachedOnionSvc{
                         attachedInfo.torRequired,
                         attachedInfo.torReachable,
@@ -10933,6 +11036,8 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
             handleVersionMessage(peerId, msg);
         } else if (msg.command == "verack") {
             handleVerackMessage(peerId, msg);
+        } else if (msg.command == "peer_hello") {
+            handlePeerHelloMessage(peerId, msg);
         } else if (msg.command == "getaddr") {
             handleGetAddrMessage(peerId, msg);
         } else if (msg.command == "addr") {
@@ -11276,11 +11381,24 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
         }
         
         sendVerack(peerId);
+        sendPeerHello(peerId);
         sendGetAddr(peerId);
         sendMempoolRequest(peerId);
         sendPoeInventory(peerId);
         sendUpdateBundleInventory(peerId);
         startPoeSync(peerId);
+    }
+
+    void handlePeerHelloMessage(const std::string& peerId, const network::Message& msg) {
+        const auto parsed = core::parsePeerHelloPayload(msg.payload);
+        if (!parsed) {
+            utils::Logger::warn("Ignored malformed peer_hello from " + peerId);
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lock(peerHelloMtx_);
+            peerHelloById_[peerId] = *parsed;
+        }
     }
     
     void handleVerackMessage(const std::string& peerId, const network::Message& msg) {
@@ -12092,7 +12210,7 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
         sendVersion(peer.id);
         
         // Update discovery with successful connection
-        if (discovery_) {
+        if (discovery_ && isDiscoveryEligiblePeerAddress(peer.address)) {
             discovery_->markPeerSuccess(peer.address);
         }
     }
@@ -12100,13 +12218,17 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
 	    void handlePeerDisconnected(const network::Peer& peer) {
 	        utils::Logger::info("Peer disconnected: " + peer.id);
 	        peerHeights_.erase(peer.id);
+            {
+                std::lock_guard<std::mutex> lock(peerHelloMtx_);
+                peerHelloById_.erase(peer.id);
+            }
 	        {
 	            std::lock_guard<std::mutex> lock(poeSyncMtx_);
 	            poeSync_.erase(peer.id);
 	        }
 	        
 	        // Update discovery with failed connection
-	        if (discovery_) {
+	        if (discovery_ && isDiscoveryEligiblePeerAddress(peer.address)) {
 	            discovery_->markPeerFailed(peer.address);
 	        }
 	        
@@ -12170,6 +12292,9 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
             std::atomic<uint64_t> torBridgeProviderMetaUpdatedAt_{0};
 	    
 	    std::unordered_map<std::string, uint64_t> peerHeights_;
+        mutable std::mutex peerHelloMtx_;
+        std::unordered_map<std::string, core::PeerHelloInfo> peerHelloById_;
+        std::string torSessionDisplayId_;
     std::unordered_set<std::string> knownTxs_;
     std::unordered_set<std::string> knownKnowledge_;
 	    std::unordered_set<std::string> knownBlocks_;
