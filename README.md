@@ -106,6 +106,40 @@ kepler
 
 The SynapseNet seed node runs at `144.31.169.103:8333`. All clients automatically discover and connect to it via the hardcoded bootstrap list. You can also add it manually with `--addnode 144.31.169.103:8333`.
 
+For Tor clients, the network now exposes a stable P2P onion seed. Use this as the primary seed when running through Tor:
+
+- **Clearnet seed:** `144.31.169.103:8333`
+- **Tor seed:** `2wxabur3cb23zdtlqi3ci4umpx7ro5yvtev7qzsv4mk2dsslakjubbqd.onion:8333`
+
+### Tor-Preferred Connection (External Tor)
+
+If you already have Tor running locally on `127.0.0.1:9050` with control port `127.0.0.1:9051`, start SynapseNet like this:
+
+```bash
+cat > /tmp/synapsenet_tor.conf << 'EOF'
+agent.tor.required=true
+agent.tor.mode=external
+tor.socks.host=127.0.0.1
+tor.socks.port=9050
+tor.control.port=9051
+agent.routing.allow_clearnet_fallback=true
+agent.routing.allow_p2p_clearnet_fallback=true
+skip_wizard=true
+EOF
+
+TERM=xterm-256color ./build/synapsed \
+  --config /tmp/synapsenet_tor.conf \
+  --datadir /tmp/synapsenet_tor_data \
+  --addnode 2wxabur3cb23zdtlqi3ci4umpx7ro5yvtev7qzsv4mk2dsslakjubbqd.onion:8333
+```
+
+Expected result:
+
+- `Node: ONLINE`
+- `Peers: 1+`
+- `Route: TOR` or `TOR_PLUS_FALLBACK`
+- the seed node will show your peer in `node.peers` with `transport: "tor-onion"` instead of only a raw loopback socket
+
 ### macOS (Native Build)
 
 ```bash
@@ -256,6 +290,7 @@ kill $(cat /tmp/synapsenet_data/synapsed.lock | head -1)
 | Host | Port | Location |
 |------|------|----------|
 | `144.31.169.103` | 8333 | Finland |
+| `2wxabur3cb23zdtlqi3ci4umpx7ro5yvtev7qzsv4mk2dsslakjubbqd.onion` | 8333 | Tor hidden service |
 
 ---
 
