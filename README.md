@@ -111,12 +111,46 @@ For Tor clients, the network now exposes a stable P2P onion seed. Use this as th
 - **Clearnet seed:** `144.31.169.103:8333`
 - **Tor seed:** `2wxabur3cb23zdtlqi3ci4umpx7ro5yvtev7qzsv4mk2dsslakjubbqd.onion:8333`
 
-### Tor-Preferred Connection (External Tor)
+### Tor-Preferred Connection (Recommended Launch Sequence)
 
-If you already have Tor running locally on `127.0.0.1:9050` with control port `127.0.0.1:9051`, start SynapseNet like this:
+Use this two-step launch sequence if you want a stable Tor-first connection to the SynapseNet onion seed. It avoids the common case where an old Tor process or multiple `synapsed` processes leave the UI stuck at `Tor bootstrap: 70%`.
+
+Step 1 starts a clean Tor runtime on `127.0.0.1:9050` with control port `127.0.0.1:9051` and verifies the SOCKS path before SynapseNet starts.
+
+Step 2 launches `synapsed` against the stable onion seed.
+
+The Tor start command below uses the Tor Browser bundle path on macOS. On Linux or Windows, use any Tor daemon or Tor Browser runtime that exposes the same local endpoints:
+
+- `127.0.0.1:9050` for SOCKS
+- `127.0.0.1:9051` for the Tor control port
+
+#### Step 1: Start and verify Tor
 
 ```bash
-cat > /tmp/synapsenet_tor.conf << 'EOF'
+pkill -f '/build/synapsed' || true
+pkill -f 'Tor Browser.app/Contents/MacOS/Tor/tor' || true
+pkill -f 'tor --quiet --SocksPort 127.0.0.1:9050' || true
+
+mkdir -p "$HOME/.synapsenet/data/tor"
+
+"/Applications/Tor Browser.app/Contents/MacOS/Tor/tor" \
+  --quiet \
+  --SocksPort 127.0.0.1:9050 \
+  --ControlPort 127.0.0.1:9051 \
+  --DataDirectory "$HOME/.synapsenet/data/tor" \
+  --PidFile "$HOME/.synapsenet/data/tor/tor.pid" \
+  --RunAsDaemon 1
+
+lsof -nP -iTCP:9050 -iTCP:9051 -sTCP:LISTEN
+curl --socks5-hostname 127.0.0.1:9050 https://check.torproject.org/api/ip
+```
+
+#### Step 2: Run SynapseNet through the onion seed
+
+```bash
+pkill -f '/build/synapsed' || true
+
+cat > "$HOME/.synapsenet/data/synapsenet.conf" <<'EOF'
 agent.tor.required=true
 agent.tor.mode=external
 tor.socks.host=127.0.0.1
@@ -124,12 +158,13 @@ tor.socks.port=9050
 tor.control.port=9051
 agent.routing.allow_clearnet_fallback=true
 agent.routing.allow_p2p_clearnet_fallback=true
-skip_wizard=true
+poe.epoch.auto_enabled=false
+poe.allow_self_validator_bootstrap=false
 EOF
 
 TERM=xterm-256color ./build/synapsed \
-  --config /tmp/synapsenet_tor.conf \
-  --datadir /tmp/synapsenet_tor_data \
+  --config "$HOME/.synapsenet/data/synapsenet.conf" \
+  --datadir "$HOME/.synapsenet/data" \
   --addnode 2wxabur3cb23zdtlqi3ci4umpx7ro5yvtev7qzsv4mk2dsslakjubbqd.onion:8333
 ```
 
