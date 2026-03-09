@@ -8449,9 +8449,16 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
 	        poeCfg.validatorMinStakeAtoms = poeMinStakeAtoms();
 	        poeCfg.powBits = (config_.dev || config_.regtest) ? 12 : 16;
             const bool strictMainnetPoe = !(config_.dev || config_.regtest);
-            const bool adaptiveValidatorQuorum = runtimeCfg.getBool("poe.validators_adaptive", false);
-            int64_t validatorsN = runtimeCfg.getInt64("poe.validators_n", strictMainnetPoe ? 3 : 1);
-            if (adaptiveValidatorQuorum) {
+            // poe.validators_majority=true → dynamic majority quorum: ceil(N/2) votes required.
+            // This automatically scales: 2 nodes→1/1, 3 nodes→2/3 display (1 needed of 2 required),
+            // N nodes→ceil(N/2) required. Enabling this forces adaptiveQuorum=true and validatorsN=0.
+            const bool adaptiveMajorityVoting = runtimeCfg.getBool("poe.validators_majority", false);
+            const bool adaptiveValidatorQuorum = adaptiveMajorityVoting || runtimeCfg.getBool("poe.validators_adaptive", false);
+            int64_t validatorsN = runtimeCfg.getInt64("poe.validators_n", adaptiveMajorityVoting ? 0 : (strictMainnetPoe ? 3 : 1));
+            if (adaptiveMajorityVoting) {
+                // majority mode always selects ALL available validators
+                validatorsN = 0;
+            } else if (adaptiveValidatorQuorum) {
                 if (validatorsN < 0) validatorsN = 0;
             } else if (validatorsN < 1) {
                 validatorsN = 1;
@@ -8467,13 +8474,14 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
 	        poeCfg.validatorsN = static_cast<uint32_t>(validatorsN);
 	        poeCfg.validatorsM = static_cast<uint32_t>(validatorsM);
             poeCfg.adaptiveQuorum = adaptiveValidatorQuorum;
+            poeCfg.adaptiveMajority = adaptiveMajorityVoting;
             int64_t adaptiveMinVotes = runtimeCfg.getInt64("poe.validators_min_votes", 1);
             if (adaptiveMinVotes < 1) adaptiveMinVotes = 1;
             if (adaptiveMinVotes > 64) adaptiveMinVotes = 64;
             poeCfg.adaptiveMinVotes = static_cast<uint32_t>(adaptiveMinVotes);
             poeCfg.allowSelfBootstrapValidator = runtimeCfg.getBool(
                 "poe.allow_self_validator_bootstrap",
-                !strictMainnetPoe);
+                adaptiveMajorityVoting ? true : !strictMainnetPoe);
             {
                 int64_t noveltyBands = runtimeCfg.getInt64("poe.novelty_bands", static_cast<int64_t>(poeCfg.noveltyBands));
                 if (noveltyBands < 0) noveltyBands = 0;

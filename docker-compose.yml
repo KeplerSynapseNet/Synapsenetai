@@ -58,6 +58,12 @@ services:
       SYNAPSENET_POE_AUTO_EPOCH_ENABLED: "true"
       SYNAPSENET_POE_AUTO_EPOCH_INTERVAL_SECONDS: "120"
       SYNAPSENET_POE_AUTO_EPOCH_REQUIRE_NEW_FINALIZED: "false"
+      # Adaptive majority quorum: dynamically scales required votes with network size.
+      # 2 nodes → 1/1, 3 nodes → X/2, N nodes → ceil(N/2) required. Grows as more peers join.
+      SYNAPSENET_POE_VALIDATORS_MAJORITY: "true"
+      SYNAPSENET_POE_VALIDATORS_ADAPTIVE: "true"
+      SYNAPSENET_POE_VALIDATORS_N: "0"
+      SYNAPSENET_POE_ALLOW_SELF_BOOTSTRAP: "true"
       SYNAPSENET_ADDNODE: "host.docker.internal:18333"
       SYNAPSENET_DAEMON: "false"
       SYNAPSENET_FORCE_DAEMON_IF_NO_TTY: "false"

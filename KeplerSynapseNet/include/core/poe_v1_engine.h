@@ -18,6 +18,7 @@ struct PoeV1Config {
     uint32_t validatorsM = 1;
     bool adaptiveQuorum = false;
     uint32_t adaptiveMinVotes = 1;
+    bool adaptiveMajority = false;  // when true: require ceil(N/2) votes (simple majority)
     bool allowSelfBootstrapValidator = true;
     uint32_t powBits = 16;
     uint64_t powMaxAttempts = 1000000ULL; // max PoW attempts before giving up (0 = unlimited)
