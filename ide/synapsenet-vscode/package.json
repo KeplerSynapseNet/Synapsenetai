@@ -12,28 +12,7 @@
     "Programming Languages"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onCommand:synapsenet.modelStatus",
-    "onCommand:synapsenet.modelList",
-    "onCommand:synapsenet.modelLoad",
-    "onCommand:synapsenet.modelUnload",
-    "onCommand:synapsenet.remoteList",
-    "onCommand:synapsenet.remoteRent",
-    "onCommand:synapsenet.remoteEnd",
-    "onCommand:synapsenet.aiComplete",
-    "onCommand:synapsenet.aiStop",
-    "onCommand:synapsenet.openChat",
-    "onCommand:synapsenet.toggleInline",
-    "onCommand:synapsenet.questConfigure",
-    "onCommand:synapsenet.questSelect",
-    "onCommand:synapsenet.questActive",
-    "onCommand:synapsenet.questClear",
-    "onCommand:synapsenet.questCheckoutBranch",
-    "onCommand:synapsenet.questForkRepo",
-    "onCommand:synapsenet.questCommit",
-    "onCommand:synapsenet.questCreatePr",
-    "onCommand:synapsenet.suggestPatch",
-    "onCommand:synapsenet.poeSubmitCode"
+    "onStartupFinished"
   ],
   "main": "./extension.js",
   "contributes": {

@@ -28,7 +28,9 @@ models/*.part*
 node_modules/
 
 # Additional Runtime/Secret files
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/c_cpp_properties.json
 .qodo/
 data-main/
 *.db
