@@ -1005,10 +1005,10 @@ bool refreshTorWebReadiness(bool torSocksReachable, bool force = false) {
     };
 
     const std::string probeUrlSingle =
-        cfg.getString("agent.tor.web_probe_url", "https://duckduckgo.com/robots.txt");
+        cfg.getString("agent.tor.web_probe_url", "http://detectportal.firefox.com/success.txt");
     std::vector<std::string> probeUrls = parseProbeUrls(
         cfg.getString("agent.tor.web_probe_urls",
-                      "https://duckduckgo.com/robots.txt,https://check.torproject.org/api/ip,https://example.com/"));
+                      "http://detectportal.firefox.com/success.txt,http://neverssl.com/,https://check.torproject.org/api/ip,https://example.com/"));
     if (probeUrls.empty()) probeUrls.push_back(probeUrlSingle);
 
     const uint32_t probeRetries = static_cast<uint32_t>(std::clamp<int64_t>(
@@ -1020,7 +1020,7 @@ bool refreshTorWebReadiness(bool torSocksReachable, bool force = false) {
     const uint32_t successStreakToReady = static_cast<uint32_t>(std::clamp<int64_t>(
         cfg.getInt64("agent.tor.web_probe_success_streak_to_ready", 1), 1, 12));
     const uint32_t timeoutSec = static_cast<uint32_t>(std::clamp<int64_t>(
-        cfg.getInt64("agent.tor.web_probe_timeout_seconds", 6), 2, 30));
+        cfg.getInt64("agent.tor.web_probe_timeout_seconds", 15), 2, 60));
 
     web::CurlFetchOptions opts;
     opts.socksProxyHostPort = configuredTorSocksHost() + ":" + std::to_string(configuredTorSocksPort());
