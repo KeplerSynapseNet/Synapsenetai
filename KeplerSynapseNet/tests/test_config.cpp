@@ -23,6 +23,20 @@ static bool testDefaultsKeepStringLiterals() {
     return true;
 }
 
+static bool testEpochAndNaanDefaults() {
+    auto& cfg = Config::instance();
+    cfg.reset();
+
+    if (!cfg.getBool("poe.epoch.auto_require_new_finalized", false)) return false;
+    if (cfg.getInt64("naan.score.initial", 0) != 100) return false;
+    if (cfg.getInt64("naan.score.reject_weight", 0) != 12) return false;
+    if (cfg.getInt64("naan.score.violation_weight", 0) != 40) return false;
+    if (cfg.getInt64("naan.connector_abuse.violation_penalty_steps", 0) != 1) return false;
+    if (cfg.getInt64("naan.abuse_classifier.policy_violation_penalty", 0) != 1) return false;
+
+    return true;
+}
+
 static bool testExplicitCStringSetSavesVerbatim() {
     auto& cfg = Config::instance();
     cfg.reset();
@@ -51,6 +65,10 @@ int main() {
     }
     if (!testExplicitCStringSetSavesVerbatim()) {
         std::cerr << "testExplicitCStringSetSavesVerbatim failed\n";
+        return 1;
+    }
+    if (!testEpochAndNaanDefaults()) {
+        std::cerr << "testEpochAndNaanDefaults failed\n";
         return 1;
     }
     return 0;

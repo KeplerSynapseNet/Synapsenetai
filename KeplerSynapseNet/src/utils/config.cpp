@@ -110,8 +110,26 @@ bool Config::loadDefaults() {
 
     set("poe.epoch_budget", static_cast<int64_t>(100000000));
     set("poe.epoch_iterations", 20);
+    set("poe.epoch.auto_require_new_finalized", true);
     set("poe.validators_adaptive", false);
     set("poe.validators_min_votes", 1);
+
+    set("naan.score.initial", static_cast<int64_t>(100));
+    set("naan.score.accept_weight", static_cast<int64_t>(12));
+    set("naan.score.reject_weight", static_cast<int64_t>(12));
+    set("naan.score.violation_weight", static_cast<int64_t>(40));
+    set("naan.score.band.throttled_below_or_equal", static_cast<int64_t>(-150));
+    set("naan.score.band.review_only_below_or_equal", static_cast<int64_t>(-280));
+    set("naan.score.band.local_draft_only_below_or_equal", static_cast<int64_t>(-420));
+    set("naan.score.band.local_draft_recovery_above", static_cast<int64_t>(-220));
+    set("naan.score.band.local_draft_recovery_clean_steps", static_cast<int64_t>(2));
+    set("naan.connector_abuse.policy_block_delta_threshold", static_cast<int64_t>(12));
+    set("naan.connector_abuse.failure_delta_threshold", static_cast<int64_t>(60));
+    set("naan.connector_abuse.cooldown_ticks", static_cast<int64_t>(30));
+    set("naan.connector_abuse.violation_penalty_steps", static_cast<int64_t>(1));
+    set("naan.abuse_classifier.spam_loop_penalty", static_cast<int64_t>(1));
+    set("naan.abuse_classifier.invalid_citation_penalty", static_cast<int64_t>(1));
+    set("naan.abuse_classifier.policy_violation_penalty", static_cast<int64_t>(1));
 
     set("implant.update.protocol_min", 1);
     set("implant.update.protocol_max", 1);

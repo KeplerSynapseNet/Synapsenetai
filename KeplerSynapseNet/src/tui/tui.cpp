@@ -2800,7 +2800,7 @@ void TUI::Impl::drawKnowledge() {
         if (e.acceptanceRewardCredited) rewardedCount++;
     }
     mvprintw(innerRow++, boxX + 3, "Code entries:      %zu", codeCount);
-    mvprintw(innerRow++, boxX + 3, "Rewarded entries:  %zu", rewardedCount);
+    mvprintw(innerRow++, boxX + 3, "Acceptance-paid entries: %zu", rewardedCount);
 
     if (state.network.lastRewardEpochId > 0 && state.network.lastReward > 0) {
         std::ostringstream rewardLine;
@@ -2812,7 +2812,7 @@ void TUI::Impl::drawKnowledge() {
     } else {
         printClippedLine(innerRow++, boxX + 3, boxW - 6, "Last epoch payout: n/a");
     }
-    printClippedLine(innerRow++, boxX + 3, boxW - 6, "Balance can grow from epoch payouts even when entry count stays the same.");
+    printClippedLine(innerRow++, boxX + 3, boxW - 6, "Epoch payouts run when newly finalized entries are available.");
 
     int listY = row + 12;
     int listH = LINES - listY - 6;

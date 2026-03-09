@@ -2179,13 +2179,13 @@ void configureNaanConnectorAbuseGuard() {
     };
 
     policy.policyBlockDeltaThreshold = readPolicy(
-        "naan.connector_abuse.policy_block_delta_threshold", 6, 1, 1000000);
+        "naan.connector_abuse.policy_block_delta_threshold", 12, 1, 1000000);
     policy.failureDeltaThreshold = readPolicy(
-        "naan.connector_abuse.failure_delta_threshold", 20, 1, 1000000);
+        "naan.connector_abuse.failure_delta_threshold", 60, 1, 1000000);
     policy.cooldownTicks = readPolicy(
         "naan.connector_abuse.cooldown_ticks", 30, 1, 1000000);
     policy.violationPenaltySteps = readPolicy(
-        "naan.connector_abuse.violation_penalty_steps", 2, 1, 16);
+        "naan.connector_abuse.violation_penalty_steps", 1, 1, 16);
 
     naanConnectorAbuseGuard_.setPolicy(policy);
 }
@@ -2210,7 +2210,7 @@ void configureNaanScorePolicy() {
     policy.scoreMin = readBoundedI64("naan.score.min", -1000, -1000000, 0);
     policy.scoreMax = readBoundedI64("naan.score.max", 1000, 0, 1000000);
     if (policy.scoreMax < policy.scoreMin) std::swap(policy.scoreMax, policy.scoreMin);
-    policy.initialScore = readBoundedI64("naan.score.initial", 0, policy.scoreMin, policy.scoreMax);
+    policy.initialScore = readBoundedI64("naan.score.initial", 100, policy.scoreMin, policy.scoreMax);
 
     policy.decayNumerator = readBoundedU32("naan.score.decay_numerator", 95, 0, 1000000);
     policy.decayDenominator = readBoundedU32("naan.score.decay_denominator", 100, 1, 1000000);
@@ -2219,19 +2219,19 @@ void configureNaanScorePolicy() {
     }
 
     policy.acceptWeight = readBoundedI64("naan.score.accept_weight", 12, 0, 1000000);
-    policy.rejectWeight = readBoundedI64("naan.score.reject_weight", 30, 0, 1000000);
-    policy.violationWeight = readBoundedI64("naan.score.violation_weight", 120, 0, 1000000);
+    policy.rejectWeight = readBoundedI64("naan.score.reject_weight", 12, 0, 1000000);
+    policy.violationWeight = readBoundedI64("naan.score.violation_weight", 40, 0, 1000000);
 
     policy.throttledBelowOrEqual = readBoundedI64(
-        "naan.score.band.throttled_below_or_equal", -60, policy.scoreMin, policy.scoreMax);
+        "naan.score.band.throttled_below_or_equal", -150, policy.scoreMin, policy.scoreMax);
     policy.reviewOnlyBelowOrEqual = readBoundedI64(
-        "naan.score.band.review_only_below_or_equal", -120, policy.scoreMin, policy.scoreMax);
+        "naan.score.band.review_only_below_or_equal", -280, policy.scoreMin, policy.scoreMax);
     policy.localDraftOnlyBelowOrEqual = readBoundedI64(
-        "naan.score.band.local_draft_only_below_or_equal", -200, policy.scoreMin, policy.scoreMax);
+        "naan.score.band.local_draft_only_below_or_equal", -420, policy.scoreMin, policy.scoreMax);
     policy.localDraftRecoveryAbove = readBoundedI64(
-        "naan.score.band.local_draft_recovery_above", -120, policy.scoreMin, policy.scoreMax);
+        "naan.score.band.local_draft_recovery_above", -220, policy.scoreMin, policy.scoreMax);
     policy.localDraftRecoveryCleanSteps = readBoundedU32(
-        "naan.score.band.local_draft_recovery_clean_steps", 3, 0, 1000000);
+        "naan.score.band.local_draft_recovery_clean_steps", 2, 0, 1000000);
 
     policy.normalBatchLimit = readBoundedU32("naan.score.batch_limit.full", 16, 0, 500);
     policy.throttledBatchLimit = readBoundedU32("naan.score.batch_limit.throttled", 4, 0, 500);
@@ -2247,7 +2247,7 @@ void configureNaanScorePolicy() {
     naanAbuseCitationPenalty_.store(readBoundedU32(
         "naan.abuse_classifier.invalid_citation_penalty", 1, 0, 64));
     naanAbusePolicyPenalty_.store(readBoundedU32(
-        "naan.abuse_classifier.policy_violation_penalty", 2, 0, 64));
+        "naan.abuse_classifier.policy_violation_penalty", 1, 0, 64));
 
     naanScoreStatePath_ = config_.dataDir + "/naan/score.state";
     naanScoreDecayStatePath_ = config_.dataDir + "/naan/score_decay.state";
@@ -11968,7 +11968,7 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
         const uint64_t lastRun = autoPoeEpochLastRunAt_.load();
         if (lastRun != 0 && now < (lastRun + intervalSec)) return;
 
-        const bool requireNewFinalized = runtimeCfg.getBool("poe.epoch.auto_require_new_finalized", false);
+        const bool requireNewFinalized = runtimeCfg.getBool("poe.epoch.auto_require_new_finalized", true);
         const uint64_t finalizedCount = poeV1_->totalFinalized();
         if (finalizedCount == 0) return;
         if (requireNewFinalized && finalizedCount <= autoPoeEpochLastFinalizedCount_.load()) return;
