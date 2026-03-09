@@ -43,6 +43,7 @@ struct KnowledgeEntryV1 {
     crypto::Hash256 submitId() const;
     crypto::Hash256 signatureHash() const;
     uint64_t contentSimhash64() const;
+    crypto::Hash256 bodyFingerprint() const; // hash of content excluding timestamp/nonce — for exact semantic duplicate detection
 
     bool checkLimits(const LimitsV1& limits, std::string* reason = nullptr) const;
     bool verifyPoW(std::string* reason = nullptr) const;
