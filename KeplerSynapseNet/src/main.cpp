@@ -12043,7 +12043,10 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
         crypto::PublicKey selfPub{};
         std::memcpy(selfPub.data(), pubV.data(), selfPub.size());
 
-        auto selected = core::poe_v1::selectValidators(poeV1_->chainSeed(), submitId, validators, cfg.validatorsN);
+        uint32_t selectedCount = poeV1_->effectiveSelectedValidators();
+        if (selectedCount == 0) return;
+
+        auto selected = core::poe_v1::selectValidators(poeV1_->chainSeed(), submitId, validators, selectedCount);
         if (std::find(selected.begin(), selected.end(), selfPub) == selected.end()) return;
 
         auto votes = poeV1_->getVotesForSubmit(submitId);
