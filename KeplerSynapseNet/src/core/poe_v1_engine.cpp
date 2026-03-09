@@ -144,8 +144,6 @@ static uint32_t effectiveRequiredVotesForSelected(const PoeV1Config& cfg, uint32
         return cfg.validatorsM;
     }
 
-    // Majority voting mode: require ceil(N/2) votes — scales dynamically with network size.
-    // N=1→1, N=2→1, N=3→2, N=4→2, N=5→3, N=1000→500
     if (cfg.adaptiveMajority) {
         uint32_t majority = (selectedCount + 1) / 2;
         return std::max<uint32_t>(1u, majority);

@@ -1,5 +1,30 @@
 {
-  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}/KeplerSynapseNet/build",
+    "--header-insertion=never",
+    "--clang-tidy=false",
+    "--background-index=true",
+    "--fallback-style=none",
+  ],
+  "clangd.fallbackFlags": [
+    "-std=c++17",
+    "-IKeplerSynapseNet/include",
+    "-IKeplerSynapseNet/src",
+    "-IKeplerSynapseNet/third_party/llama.cpp/include",
+    "-IKeplerSynapseNet/third_party/llama.cpp/vendor",
+    "-IKeplerSynapseNet/third_party/llama.cpp/vendor/nlohmann",
+    "-DSYNAPSE_BUILD_TUI=1",
+    "-DSYNAPSE_HAVE_SQLITE3=1",
+    "-DSYNAPSE_USE_SECP256K1=1",
+  ],
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "C_Cpp.autocomplete": "disabled",
+  "C_Cpp.errorSquiggles": "disabled",
   "C_Cpp.default.cppStandard": "c++17",
-  "C_Cpp.default.intelliSenseMode": "macos-clang-arm64"
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/KeplerSynapseNet/build/compile_commands.json",
+  "editor.formatOnSave": false,
+  "files.associations": {
+    "*.h": "cpp",
+    "*.cpp": "cpp",
+  },
 }

@@ -7,7 +7,43 @@
       "intelliSenseMode": "macos-clang-arm64",
       "cppStandard": "c++17",
       "cStandard": "c17",
-      "compileCommands": "${workspaceFolder}/build/compile_commands.json"
-    }
-  ]
+      "includePath": [
+        "${workspaceFolder}/KeplerSynapseNet/include",
+        "${workspaceFolder}/KeplerSynapseNet/src",
+        "${workspaceFolder}/KeplerSynapseNet/third_party/llama.cpp/include",
+        "${workspaceFolder}/KeplerSynapseNet/third_party/llama.cpp/vendor",
+        "${workspaceFolder}/KeplerSynapseNet/third_party/llama.cpp/vendor/nlohmann",
+        "/usr/local/include",
+        "/opt/homebrew/include",
+      ],
+      "defines": [
+        "SYNAPSE_BUILD_TUI=1",
+        "SYNAPSE_HAVE_SQLITE3=1",
+        "SYNAPSE_USE_SECP256K1=1",
+      ],
+      "compileCommands": "${workspaceFolder}/KeplerSynapseNet/build/compile_commands.json",
+    },
+    {
+      "name": "Linux",
+      "compilerPath": "/usr/bin/g++",
+      "intelliSenseMode": "linux-gcc-x64",
+      "cppStandard": "c++17",
+      "cStandard": "c17",
+      "includePath": [
+        "${workspaceFolder}/KeplerSynapseNet/include",
+        "${workspaceFolder}/KeplerSynapseNet/src",
+        "${workspaceFolder}/KeplerSynapseNet/third_party/llama.cpp/include",
+        "${workspaceFolder}/KeplerSynapseNet/third_party/llama.cpp/vendor",
+        "${workspaceFolder}/KeplerSynapseNet/third_party/llama.cpp/vendor/nlohmann",
+        "/usr/local/include",
+        "/usr/include",
+      ],
+      "defines": [
+        "SYNAPSE_BUILD_TUI=1",
+        "SYNAPSE_HAVE_SQLITE3=1",
+        "SYNAPSE_USE_SECP256K1=1",
+      ],
+      "compileCommands": "${workspaceFolder}/KeplerSynapseNet/build/compile_commands.json",
+    },
+  ],
 }

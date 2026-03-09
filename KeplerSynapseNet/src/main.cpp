@@ -8449,14 +8449,10 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
 	        poeCfg.validatorMinStakeAtoms = poeMinStakeAtoms();
 	        poeCfg.powBits = (config_.dev || config_.regtest) ? 12 : 16;
             const bool strictMainnetPoe = !(config_.dev || config_.regtest);
-            // poe.validators_majority=true → dynamic majority quorum: ceil(N/2) votes required.
-            // This automatically scales: 2 nodes→1/1, 3 nodes→2/3 display (1 needed of 2 required),
-            // N nodes→ceil(N/2) required. Enabling this forces adaptiveQuorum=true and validatorsN=0.
             const bool adaptiveMajorityVoting = runtimeCfg.getBool("poe.validators_majority", false);
             const bool adaptiveValidatorQuorum = adaptiveMajorityVoting || runtimeCfg.getBool("poe.validators_adaptive", false);
             int64_t validatorsN = runtimeCfg.getInt64("poe.validators_n", adaptiveMajorityVoting ? 0 : (strictMainnetPoe ? 3 : 1));
             if (adaptiveMajorityVoting) {
-                // majority mode always selects ALL available validators
                 validatorsN = 0;
             } else if (adaptiveValidatorQuorum) {
                 if (validatorsN < 0) validatorsN = 0;

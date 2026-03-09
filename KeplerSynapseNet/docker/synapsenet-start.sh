@@ -48,8 +48,6 @@ POE_MIN_SUBMIT_INTERVAL_SECONDS="${SYNAPSENET_POE_MIN_SUBMIT_INTERVAL_SECONDS:-1
 POE_AUTO_EPOCH_ENABLED="${SYNAPSENET_POE_AUTO_EPOCH_ENABLED:-true}"
 POE_AUTO_EPOCH_INTERVAL_SECONDS="${SYNAPSENET_POE_AUTO_EPOCH_INTERVAL_SECONDS:-120}"
 POE_AUTO_EPOCH_REQUIRE_NEW_FINALIZED="${SYNAPSENET_POE_AUTO_EPOCH_REQUIRE_NEW_FINALIZED:-false}"
-# Adaptive majority quorum: dynamically scale required votes with network size.
-# majority=true → ceil(N/2) required: 2 nodes→1/1, 3 nodes→X/2, N nodes→ceil(N/2).
 POE_VALIDATORS_MAJORITY="${SYNAPSENET_POE_VALIDATORS_MAJORITY:-true}"
 POE_VALIDATORS_ADAPTIVE="${SYNAPSENET_POE_VALIDATORS_ADAPTIVE:-true}"
 POE_VALIDATORS_N="${SYNAPSENET_POE_VALIDATORS_N:-0}"
@@ -131,7 +129,6 @@ sed -i \
   echo "poe.epoch.auto_enabled=${POE_AUTO_EPOCH_ENABLED}"
   echo "poe.epoch.auto_interval_seconds=${POE_AUTO_EPOCH_INTERVAL_SECONDS}"
   echo "poe.epoch.auto_require_new_finalized=${POE_AUTO_EPOCH_REQUIRE_NEW_FINALIZED}"
-  # Adaptive majority quorum settings — written unconditionally so they always take effect.
   echo "poe.validators_majority=${POE_VALIDATORS_MAJORITY}"
   echo "poe.validators_adaptive=${POE_VALIDATORS_ADAPTIVE}"
   echo "poe.validators_n=${POE_VALIDATORS_N}"
