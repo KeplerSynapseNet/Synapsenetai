@@ -7861,7 +7861,9 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
 	            webExtractor_.reset();
 	        }
 	        if (privacy_) privacy_->shutdown();
-            (void)stopManagedTorRuntimeIfOwned(false);
+            if (configuredTorRuntimeMode() != "external") {
+                (void)stopManagedTorRuntimeIfOwned(false);
+            }
 	        if (quantumManager_) quantumManager_->shutdown();
 	        if (db_) db_->close();
         
