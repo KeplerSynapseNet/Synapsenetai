@@ -16,6 +16,8 @@ struct PoeV1Config {
     uint64_t validatorMinStakeAtoms = 0;
     uint32_t validatorsN = 1;
     uint32_t validatorsM = 1;
+    bool adaptiveQuorum = false;
+    uint32_t adaptiveMinVotes = 1;
     bool allowSelfBootstrapValidator = true;
     uint32_t powBits = 16;
     uint64_t powMaxAttempts = 1000000ULL; // max PoW attempts before giving up (0 = unlimited)
@@ -78,6 +80,8 @@ public:
     void setValidatorStake(const crypto::PublicKey& validator, uint64_t stakeAtoms);
     uint64_t getValidatorStake(const crypto::PublicKey& validator) const;
     std::vector<crypto::PublicKey> getDeterministicValidators() const;
+    uint32_t effectiveSelectedValidators() const;
+    uint32_t effectiveRequiredVotes() const;
 
     PoeSubmitResult submit(
         const poe_v1::ContentType type,

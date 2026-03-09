@@ -8447,14 +8447,28 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
 	        poeCfg.validatorMinStakeAtoms = poeMinStakeAtoms();
 	        poeCfg.powBits = (config_.dev || config_.regtest) ? 12 : 16;
             const bool strictMainnetPoe = !(config_.dev || config_.regtest);
+            const bool adaptiveValidatorQuorum = runtimeCfg.getBool("poe.validators_adaptive", false);
             int64_t validatorsN = runtimeCfg.getInt64("poe.validators_n", strictMainnetPoe ? 3 : 1);
-            if (validatorsN < 1) validatorsN = 1;
+            if (adaptiveValidatorQuorum) {
+                if (validatorsN < 0) validatorsN = 0;
+            } else if (validatorsN < 1) {
+                validatorsN = 1;
+            }
             if (validatorsN > 64) validatorsN = 64;
             int64_t validatorsM = runtimeCfg.getInt64("poe.validators_m", strictMainnetPoe ? 2 : 1);
-            if (validatorsM < 1) validatorsM = 1;
-            if (validatorsM > validatorsN) validatorsM = validatorsN;
+            if (adaptiveValidatorQuorum) {
+                if (validatorsM < 0) validatorsM = 0;
+            } else if (validatorsM < 1) {
+                validatorsM = 1;
+            }
+            if (validatorsN > 0 && validatorsM > validatorsN) validatorsM = validatorsN;
 	        poeCfg.validatorsN = static_cast<uint32_t>(validatorsN);
 	        poeCfg.validatorsM = static_cast<uint32_t>(validatorsM);
+            poeCfg.adaptiveQuorum = adaptiveValidatorQuorum;
+            int64_t adaptiveMinVotes = runtimeCfg.getInt64("poe.validators_min_votes", 1);
+            if (adaptiveMinVotes < 1) adaptiveMinVotes = 1;
+            if (adaptiveMinVotes > 64) adaptiveMinVotes = 64;
+            poeCfg.adaptiveMinVotes = static_cast<uint32_t>(adaptiveMinVotes);
             poeCfg.allowSelfBootstrapValidator = runtimeCfg.getBool(
                 "poe.allow_self_validator_bootstrap",
                 !strictMainnetPoe);
@@ -9305,7 +9319,11 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
                 auto entry = poeV1_->getEntry(submitRes.submitId);
                 uint64_t expectedAtoms = entry ? poeV1_->calculateAcceptanceReward(*entry) : 0;
                 uint32_t votes = static_cast<uint32_t>(poeV1_->getVotesForSubmit(submitRes.submitId).size());
-                uint32_t requiredVotes = poeV1_->getConfig().validatorsM;
+                uint32_t requiredVotes = poeV1_->effectiveRequiredVotes();
+                if (requiredVotes == 0) {
+                    core::PoeV1Config cfg = poeV1_->getConfig();
+                    requiredVotes = cfg.validatorsM == 0 ? 1U : cfg.validatorsM;
+                }
 
                 maybeCreditAcceptanceReward(submitRes.submitId);
                 bool paid = transfer_ ? transfer_->hasTransaction(rewardIdForAcceptance(submitRes.submitId)) : false;
@@ -9430,7 +9448,11 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
 		                auto entry = poeV1_->getEntry(submitRes.submitId);
 		                uint64_t expectedAtoms = entry ? poeV1_->calculateAcceptanceReward(*entry) : 0;
 		                uint32_t votes = static_cast<uint32_t>(poeV1_->getVotesForSubmit(submitRes.submitId).size());
-		                uint32_t requiredVotes = poeV1_->getConfig().validatorsM;
+		                uint32_t requiredVotes = poeV1_->effectiveRequiredVotes();
+		                if (requiredVotes == 0) {
+		                    core::PoeV1Config cfg = poeV1_->getConfig();
+		                    requiredVotes = cfg.validatorsM == 0 ? 1U : cfg.validatorsM;
+		                }
 
 		                maybeCreditAcceptanceReward(submitRes.submitId);
 		                bool paid = transfer_ ? transfer_->hasTransaction(rewardIdForAcceptance(submitRes.submitId)) : false;
@@ -9676,6 +9698,10 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
                     auto ids = poeV1_->listEntryIds(50);
                     tmp.reserve(ids.size());
                     core::PoeV1Config cfg = poeV1_->getConfig();
+                    uint32_t effectiveRequiredVotes = poeV1_->effectiveRequiredVotes();
+                    if (effectiveRequiredVotes == 0) {
+                        effectiveRequiredVotes = cfg.validatorsM == 0 ? 1U : cfg.validatorsM;
+                    }
 	                    for (const auto& sid : ids) {
 	                        auto entry = poeV1_->getEntry(sid);
 	                        if (!entry) continue;
@@ -9686,7 +9712,7 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
 	                        t.s.contentType = static_cast<uint8_t>(entry->contentType);
 	                        t.s.finalized = poeV1_->isFinalized(sid);
 	                        t.s.votes = static_cast<uint32_t>(poeV1_->getVotesForSubmit(sid).size());
-	                        t.s.requiredVotes = cfg.validatorsM;
+	                        t.s.requiredVotes = effectiveRequiredVotes;
 	                        uint64_t atoms = poeV1_->calculateAcceptanceReward(*entry);
 	                        t.s.acceptanceReward = atomsToNgt(atoms);
                         t.s.acceptanceRewardCredited = transfer_ ? transfer_->hasTransaction(rewardIdForAcceptance(sid)) : false;

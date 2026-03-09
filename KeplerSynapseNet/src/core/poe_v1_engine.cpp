@@ -127,6 +127,31 @@ static std::vector<crypto::PublicKey> loadDeterministicValidators(
     return eligible;
 }
 
+static uint32_t effectiveSelectedValidatorCount(const PoeV1Config& cfg, size_t validatorCount) {
+    if (validatorCount == 0) return 0;
+    uint32_t available = static_cast<uint32_t>(std::min<size_t>(validatorCount, 64));
+    if (cfg.adaptiveQuorum && cfg.validatorsN == 0) {
+        return available;
+    }
+    if (cfg.validatorsN == 0) return 0;
+    return std::min<uint32_t>(available, cfg.validatorsN);
+}
+
+static uint32_t effectiveRequiredVotesForSelected(const PoeV1Config& cfg, uint32_t selectedCount) {
+    if (selectedCount == 0) return 0;
+    if (!cfg.adaptiveQuorum) {
+        if (cfg.validatorsM == 0 || cfg.validatorsM > selectedCount) return 0;
+        return cfg.validatorsM;
+    }
+
+    uint32_t minVotes = std::max<uint32_t>(1, cfg.adaptiveMinVotes);
+    uint32_t configured = cfg.validatorsM == 0
+        ? selectedCount
+        : std::min<uint32_t>(cfg.validatorsM, selectedCount);
+    configured = std::max(configured, minVotes);
+    return std::min<uint32_t>(configured, selectedCount);
+}
+
 static bool pubKeyLess(const crypto::PublicKey& a, const crypto::PublicKey& b) {
     return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end());
 }
@@ -329,6 +354,29 @@ std::vector<crypto::PublicKey> PoeV1Engine::getDeterministicValidators() const {
         return normalizeValidatorList(impl_->validators);
     }
     return loadDeterministicValidators(impl_->db, impl_->cfg, impl_->validators);
+}
+
+uint32_t PoeV1Engine::effectiveSelectedValidators() const {
+    std::lock_guard<std::mutex> lock(impl_->mtx);
+    std::vector<crypto::PublicKey> validators;
+    if (!impl_->db.isOpen()) {
+        validators = normalizeValidatorList(impl_->validators);
+    } else {
+        validators = loadDeterministicValidators(impl_->db, impl_->cfg, impl_->validators);
+    }
+    return effectiveSelectedValidatorCount(impl_->cfg, validators.size());
+}
+
+uint32_t PoeV1Engine::effectiveRequiredVotes() const {
+    std::lock_guard<std::mutex> lock(impl_->mtx);
+    std::vector<crypto::PublicKey> validators;
+    if (!impl_->db.isOpen()) {
+        validators = normalizeValidatorList(impl_->validators);
+    } else {
+        validators = loadDeterministicValidators(impl_->db, impl_->cfg, impl_->validators);
+    }
+    uint32_t selectedCount = effectiveSelectedValidatorCount(impl_->cfg, validators.size());
+    return effectiveRequiredVotesForSelected(impl_->cfg, selectedCount);
 }
 
 static crypto::Hash256 rewardIdForAcceptance(const crypto::Hash256& submitId) {
@@ -613,7 +661,8 @@ PoeSubmitResult PoeV1Engine::submit(
             validatorSet = getDeterministicValidators();
         }
         if (!validatorSet.empty()) {
-            std::vector<crypto::PublicKey> selected = poe_v1::selectValidators(chainSeed(), sid, validatorSet, cfg.validatorsN);
+            uint32_t selectedCount = effectiveSelectedValidatorCount(cfg, validatorSet.size());
+            std::vector<crypto::PublicKey> selected = poe_v1::selectValidators(chainSeed(), sid, validatorSet, selectedCount);
             auto it = std::find(selected.begin(), selected.end(), entry.authorPubKey);
             if (it != selected.end()) {
                 poe_v1::ValidationVoteV1 v;
@@ -730,13 +779,14 @@ bool PoeV1Engine::addVote(const poe_v1::ValidationVoteV1& vote) {
 
     crypto::Hash256 seed{};
     std::vector<crypto::PublicKey> validators;
-    uint32_t validatorsN = 0;
+    PoeV1Config cfg{};
     {
         std::lock_guard<std::mutex> lock(impl_->mtx);
         seed = impl_->seed;
         validators = loadDeterministicValidators(impl_->db, impl_->cfg, impl_->validators);
-        validatorsN = impl_->cfg.validatorsN;
+        cfg = impl_->cfg;
     }
+    uint32_t validatorsN = effectiveSelectedValidatorCount(cfg, validators.size());
     if (vote.prevBlockHash != seed) return false;
     if (validators.empty() || validatorsN == 0) return false;
 
@@ -917,8 +967,10 @@ std::optional<poe_v1::FinalizationRecordV1> PoeV1Engine::finalize(const crypto::
     if (validatorSet.empty()) return std::nullopt;
 
     crypto::Hash256 seed = chainSeed();
-    std::vector<crypto::PublicKey> selected = poe_v1::selectValidators(seed, submitId, validatorSet, cfg.validatorsN);
-    if (cfg.validatorsM == 0 || cfg.validatorsM > selected.size()) return std::nullopt;
+    uint32_t selectedCount = effectiveSelectedValidatorCount(cfg, validatorSet.size());
+    std::vector<crypto::PublicKey> selected = poe_v1::selectValidators(seed, submitId, validatorSet, selectedCount);
+    uint32_t requiredVotes = effectiveRequiredVotesForSelected(cfg, static_cast<uint32_t>(selected.size()));
+    if (requiredVotes == 0) return std::nullopt;
     crypto::Hash256 vsetHash = poe_v1::validatorSetHashV1(selected);
 
     std::string prefix = "poe:v1:vote:" + crypto::toHex(submitId) + ":";
@@ -957,7 +1009,7 @@ std::optional<poe_v1::FinalizationRecordV1> PoeV1Engine::finalize(const crypto::
         return a.validatorPubKey == b.validatorPubKey;
     }), votes.end());
 
-    if (votes.size() < cfg.validatorsM) return std::nullopt;
+    if (votes.size() < requiredVotes) return std::nullopt;
 
     poe_v1::FinalizationRecordV1 fin;
     fin.submitId = submitId;

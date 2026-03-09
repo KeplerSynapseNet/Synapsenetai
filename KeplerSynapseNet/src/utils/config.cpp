@@ -110,6 +110,8 @@ bool Config::loadDefaults() {
 
     set("poe.epoch_budget", static_cast<int64_t>(100000000));
     set("poe.epoch_iterations", 20);
+    set("poe.validators_adaptive", false);
+    set("poe.validators_min_votes", 1);
 
     set("implant.update.protocol_min", 1);
     set("implant.update.protocol_max", 1);
