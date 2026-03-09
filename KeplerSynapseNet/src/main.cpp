@@ -9614,6 +9614,10 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
                 netInfo.yourStorage = 0.0;
                 netInfo.syncProgress = syncProgress_;
                 netInfo.synced = (syncProgress_ >= 1.0);
+                netInfo.lastReward = autoPoeLastRewardMineAtoms_.load();
+                netInfo.lastRewardEpochId = autoPoeLastRewardEpochId_.load();
+                netInfo.lastRewardEntries = autoPoeLastRewardEntries_.load();
+                netInfo.lastRewardAt = autoPoeLastRewardAt_.load();
                 ui.updateNetworkInfo(netInfo);
                 
                 if (network_) {
@@ -12011,6 +12015,13 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
             }
         }
 
+        if (mintedMine > 0) {
+            autoPoeLastRewardEpochId_.store(epochRes.epochId);
+            autoPoeLastRewardMineAtoms_.store(mintedMine);
+            autoPoeLastRewardEntries_.store(mintedCount);
+            autoPoeLastRewardAt_.store(now);
+        }
+
         autoPoeEpochLastFinalizedCount_.store(finalizedCount);
 
         std::ostringstream oss;
@@ -12179,16 +12190,31 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
 	        }
 	        broadcastInv(synapse::InvType::POE_EPOCH, hid);
 
-	        auto stored = poeV1_->getEpoch(epoch->epochId);
-	        if (!stored) return;
+        auto stored = poeV1_->getEpoch(epoch->epochId);
+        if (!stored) return;
 
-	        for (const auto& a : stored->allocations) {
-	            std::string addr = addressFromPubKey(a.authorPubKey);
-	            if (addr.empty()) continue;
-	            crypto::Hash256 rid = rewardIdForEpoch(stored->epochId, a.contentId);
-	            transfer_->creditRewardDeterministic(addr, rid, a.amount);
-	        }
-	    }
+        uint64_t mintedMine = 0;
+        uint64_t mintedCount = 0;
+        for (const auto& a : stored->allocations) {
+            std::string addr = addressFromPubKey(a.authorPubKey);
+            if (addr.empty()) continue;
+            crypto::Hash256 rid = rewardIdForEpoch(stored->epochId, a.contentId);
+            if (transfer_->creditRewardDeterministic(addr, rid, a.amount)) {
+                mintedCount += 1;
+                if (!address_.empty() && addr == address_) {
+                    mintedMine += a.amount;
+                }
+            }
+        }
+
+        if (mintedMine > 0) {
+            const uint64_t now = static_cast<uint64_t>(std::time(nullptr));
+            autoPoeLastRewardEpochId_.store(stored->epochId);
+            autoPoeLastRewardMineAtoms_.store(mintedMine);
+            autoPoeLastRewardEntries_.store(mintedCount);
+            autoPoeLastRewardAt_.store(now);
+        }
+    }
 
 	    void handleUpdateManifestMessage(const std::string& peerId, const network::Message& msg) {
 	        (void)peerId;
@@ -12491,6 +12517,10 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
     std::atomic<bool> suppressCallbacks_{false};
     std::atomic<uint64_t> autoPoeEpochLastRunAt_{0};
     std::atomic<uint64_t> autoPoeEpochLastFinalizedCount_{0};
+    std::atomic<uint64_t> autoPoeLastRewardEpochId_{0};
+    std::atomic<uint64_t> autoPoeLastRewardMineAtoms_{0};
+    std::atomic<uint64_t> autoPoeLastRewardEntries_{0};
+    std::atomic<uint64_t> autoPoeLastRewardAt_{0};
 
         // Remote model routing (opt-in)
         std::mutex remoteMtx_;

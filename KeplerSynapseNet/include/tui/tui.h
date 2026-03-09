@@ -109,6 +109,9 @@ struct NetworkInfo {
     uint64_t poePending = 0;
     uint64_t poeFinalized = 0;
     uint64_t lastReward = 0; // atomic units
+    uint64_t lastRewardEpochId = 0;
+    uint64_t lastRewardEntries = 0;
+    uint64_t lastRewardAt = 0;
     std::vector<double> rewardHistory; // recent reward amounts for sparkline
 };
 

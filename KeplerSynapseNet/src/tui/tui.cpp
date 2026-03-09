@@ -2775,7 +2775,7 @@ void TUI::Impl::drawKnowledge() {
     int boxW = 76;
     int boxX = (COLS - boxW) / 2;
     
-    drawBox(row, boxX, 8, boxW, "PoE v1 Status");
+    drawBox(row, boxX, 10, boxW, "PoE v1 Status");
 
     int innerRow = row + 2;
     mvprintw(innerRow++, boxX + 3, "Total entries:     %lu", state.network.knowledgeEntries);
@@ -2802,7 +2802,19 @@ void TUI::Impl::drawKnowledge() {
     mvprintw(innerRow++, boxX + 3, "Code entries:      %zu", codeCount);
     mvprintw(innerRow++, boxX + 3, "Rewarded entries:  %zu", rewardedCount);
 
-    int listY = row + 10;
+    if (state.network.lastRewardEpochId > 0 && state.network.lastReward > 0) {
+        std::ostringstream rewardLine;
+        rewardLine << "Last epoch payout: +" << std::fixed << std::setprecision(8)
+                   << (static_cast<double>(state.network.lastReward) / 100000000.0)
+                   << " NGT (epoch #" << state.network.lastRewardEpochId
+                   << ", " << state.network.lastRewardEntries << " entries)";
+        printClippedLine(innerRow++, boxX + 3, boxW - 6, rewardLine.str());
+    } else {
+        printClippedLine(innerRow++, boxX + 3, boxW - 6, "Last epoch payout: n/a");
+    }
+    printClippedLine(innerRow++, boxX + 3, boxW - 6, "Balance can grow from epoch payouts even when entry count stays the same.");
+
+    int listY = row + 12;
     int listH = LINES - listY - 6;
     if (listH < 8) listH = 8;
     if (listH > 16) listH = 16;
