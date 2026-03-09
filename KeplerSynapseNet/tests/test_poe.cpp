@@ -605,6 +605,7 @@ static void testAdaptiveQuorumGrowsWithValidatorSet() {
     cfg.adaptiveQuorum = true;
     cfg.adaptiveMinVotes = 1;
     cfg.allowSelfBootstrapValidator = true;
+    cfg.minSubmitIntervalSeconds = 0;
     engine.setConfig(cfg);
 
     auto sk1 = makeSk(101);

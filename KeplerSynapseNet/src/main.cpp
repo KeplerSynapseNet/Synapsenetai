@@ -9697,7 +9697,7 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
                         bool mine = false;
                     };
                     std::vector<Tmp> tmp;
-                    auto ids = poeV1_->listEntryIds(50);
+                    auto ids = poeV1_->listEntryIds(0);
                     tmp.reserve(ids.size());
                     core::PoeV1Config cfg = poeV1_->getConfig();
                     uint32_t effectiveRequiredVotes = poeV1_->effectiveRequiredVotes();
@@ -9722,7 +9722,6 @@ std::string handleRpcNodeTorControl(const std::string& paramsJson) {
                         tmp.push_back(std::move(t));
                     }
                     std::sort(tmp.begin(), tmp.end(), [](const Tmp& a, const Tmp& b) { return a.ts > b.ts; });
-                    if (tmp.size() > 20) tmp.resize(20);
                     summaries.reserve(tmp.size());
                     for (auto& t : tmp) {
                         summaries.push_back(t.s);

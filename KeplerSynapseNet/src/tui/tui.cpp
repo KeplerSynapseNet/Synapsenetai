@@ -2775,7 +2775,7 @@ void TUI::Impl::drawKnowledge() {
     int boxW = 76;
     int boxX = (COLS - boxW) / 2;
     
-    drawBox(row, boxX, 7, boxW, "PoE v1 Status");
+    drawBox(row, boxX, 8, boxW, "PoE v1 Status");
 
     int innerRow = row + 2;
     mvprintw(innerRow++, boxX + 3, "Total entries:     %lu", state.network.knowledgeEntries);
@@ -2790,17 +2790,23 @@ void TUI::Impl::drawKnowledge() {
     std::vector<KnowledgeEntrySummary> nonCodeEntries;
     nonCodeEntries.reserve(entries.size());
     size_t codeCount = 0;
+    size_t rewardedCount = 0;
     for (const auto& e : entries) {
-        if (e.contentType == 2) codeCount++;
-        else nonCodeEntries.push_back(e);
+        if (e.contentType == 2) {
+            codeCount++;
+            continue;
+        }
+        nonCodeEntries.push_back(e);
+        if (e.acceptanceRewardCredited) rewardedCount++;
     }
     mvprintw(innerRow++, boxX + 3, "Code entries:      %zu", codeCount);
+    mvprintw(innerRow++, boxX + 3, "Rewarded entries:  %zu", rewardedCount);
 
-    int listY = row + 9;
+    int listY = row + 10;
     int listH = LINES - listY - 6;
     if (listH < 8) listH = 8;
     if (listH > 16) listH = 16;
-    drawBox(listY, boxX, listH, boxW, "Recent Entries");
+    drawBox(listY, boxX, listH, boxW, "Entries (scroll for full history)");
 
     int innerW = boxW - 6;
     int headerY = listY + 1;
