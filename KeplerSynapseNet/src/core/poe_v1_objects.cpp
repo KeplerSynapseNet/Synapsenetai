@@ -94,10 +94,6 @@ crypto::Hash256 KnowledgeEntryV1::contentId() const {
 }
 
 crypto::Hash256 KnowledgeEntryV1::bodyFingerprint() const {
-    // Hash of semantic content (author + type + canonical title/body + citations)
-    // deliberately excludes timestamp, version, powBits, powNonce so that two
-    // submissions of identical content at different wall-clock seconds produce
-    // the same fingerprint and can be detected as duplicates deterministically.
     std::vector<uint8_t> out;
     out.reserve(64 + title.size() + body.size() + citations.size() * 32);
     out.insert(out.end(), authorPubKey.begin(), authorPubKey.end());

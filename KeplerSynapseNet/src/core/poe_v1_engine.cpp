@@ -517,20 +517,13 @@ PoeSubmitResult PoeV1Engine::submit(
 
     crypto::Hash256 cidPre = entry.contentId();
     uint64_t shPre = entry.contentSimhash64();
-    // Body fingerprint: hash of semantic content WITHOUT timestamp/nonce.
-    // Used as primary duplicate guard so that two submissions of identical
-    // body content at different wall-clock seconds are still rejected.
     const crypto::Hash256 bfp = entry.bodyFingerprint();
     const std::string bfpKey = std::string("poe:v1:bodyfp:") + hex32(bfp);
-    // Reserve the content id under lock to prevent races while performing PoW
     const std::string ckeyPre = std::string("poe:v1:contentid:") + hex32(cidPre);
     const std::vector<uint8_t> reservationVal = {0x52}; // 'R' reserved marker
     bool reserved = false;
     {
         std::lock_guard<std::mutex> lock(impl_->mtx);
-        // Primary duplicate guard: timestamp-independent body fingerprint check.
-        // Must come before the novelty gate so the error is always "duplicate_content"
-        // even when the two submissions happen in different clock seconds.
         if (impl_->db.exists(bfpKey)) {
             res.ok = false;
             res.error = "duplicate_content";
@@ -637,8 +630,6 @@ PoeSubmitResult PoeV1Engine::submit(
         // perform the insertion and replace reservation with real mapping
         impl_->db.put(key, entry.serialize());
         impl_->db.put(ckey, hex32(sid));
-        // Persist body fingerprint so subsequent submissions of identical content
-        // (even with a different timestamp) are rejected with "duplicate_content".
         impl_->db.put(bfpKey, hex32(sid));
         uint64_t sh = entry.contentSimhash64();
         impl_->db.put("poe:v1:simhash:" + hex32(sid), u64le(sh));
