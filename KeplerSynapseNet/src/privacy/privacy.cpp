@@ -1,5 +1,6 @@
 #include "privacy/privacy.h"
 #include "crypto/crypto.h"
+#include "utils/logger.h"
 #include <mutex>
 #include <random>
 #include <ctime>
@@ -52,6 +53,9 @@ bool Privacy::enable(PrivacyMode mode) {
     
     if (mode >= PrivacyMode::BASIC && impl_->config.useTor) {
         if (!impl_->socks5.connect(impl_->config.torSocksHost, impl_->config.torSocksPort)) {
+            utils::Logger::warn(
+                "Privacy enable failed: could not connect to Tor SOCKS at " +
+                impl_->config.torSocksHost + ":" + std::to_string(impl_->config.torSocksPort));
             return false;
         }
     }
@@ -60,6 +64,10 @@ bool Privacy::enable(PrivacyMode mode) {
         impl_->onion.setRotationInterval(impl_->config.rotationInterval);
         impl_->onion.enableAutoRotation(impl_->config.rotateIdentity);
         if (!impl_->onion.start(impl_->config.onionVirtualPort, impl_->config.onionTargetPort)) {
+            utils::Logger::warn(
+                "Privacy enable failed: could not start onion service on " +
+                std::to_string(impl_->config.onionVirtualPort) + " -> 127.0.0.1:" +
+                std::to_string(impl_->config.onionTargetPort));
             return false;
         }
     }

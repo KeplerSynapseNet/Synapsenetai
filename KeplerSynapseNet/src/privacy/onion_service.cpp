@@ -1,4 +1,5 @@
 #include "privacy/privacy.h"
+#include "utils/logger.h"
 #include <mutex>
 #include <fstream>
 #include <string>
@@ -13,6 +14,20 @@
 
 namespace synapse {
 namespace privacy {
+
+namespace {
+
+constexpr const char* kTorEd25519V3Prefix = "ED25519-V3:";
+
+std::string normalizeStoredPrivateKeySpec(const std::string& storedKey) {
+    if (storedKey.empty()) return "";
+    if (storedKey.rfind(kTorEd25519V3Prefix, 0) == 0) {
+        return storedKey;
+    }
+    return std::string(kTorEd25519V3Prefix) + storedKey;
+}
+
+}
 
 struct ControlConnection {
     int sock = -1;
@@ -218,13 +233,24 @@ struct OnionService::Impl {
     bool addOnion(bool reuseKey) {
         std::string keySpec = "NEW:ED25519-V3";
         if (reuseKey && !privateKey.empty()) {
-            keySpec = "ED25519-V3:" + privateKey;
+            keySpec = normalizeStoredPrivateKeySpec(privateKey);
         }
         std::string cmd = "ADD_ONION " + keySpec + " Port=" +
                           std::to_string(virtualPort) + ",127.0.0.1:" + std::to_string(targetPort);
         std::vector<std::string> lines;
-        if (!sendCommand(cmd, lines)) return false;
-        
+        if (!sendCommand(cmd, lines)) {
+            if (!reuseKey || privateKey.empty()) {
+                return false;
+            }
+            utils::Logger::warn(
+                "Stored onion private key reuse failed; rotating to a new persistent onion identity");
+            privateKey.clear();
+            lines.clear();
+            cmd = "ADD_ONION NEW:ED25519-V3 Port=" +
+                  std::to_string(virtualPort) + ",127.0.0.1:" + std::to_string(targetPort);
+            if (!sendCommand(cmd, lines)) return false;
+        }
+
         std::string newServiceId;
         std::string newPrivateKey;
         for (const auto& line : lines) {
@@ -232,9 +258,6 @@ struct OnionService::Impl {
                 newServiceId = line.substr(14);
             } else if (line.rfind("250-PrivateKey=", 0) == 0) {
                 newPrivateKey = line.substr(15);
-                if (newPrivateKey.rfind("ED25519-V3:", 0) == 0) {
-                    newPrivateKey = newPrivateKey.substr(12);
-                }
             }
         }
         if (newServiceId.empty()) return false;
